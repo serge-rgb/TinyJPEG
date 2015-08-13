@@ -27,6 +27,19 @@
 // ============================================================
 // Usage
 // ============================================================
+// Include "tiny_jpeg.h" to and use the public interface defined below.
+//
+// You *must* do:
+//
+//      #define TJE_IMPLEMENTATION
+//      #include "tiny_jpeg.h"
+//
+// in exactly one of your C files to actually compile the implementation.
+
+
+
+
+
 // Here is an example program that loads a bmp with stb_image and writes it
 // with Tiny JPEG
 
@@ -54,14 +67,22 @@ int main()
 #endif
 
 
+
+
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+
 // ============================================================
 // Public interface:
 // ============================================================
-//
+
+
+
+
 
 // Usage:
 //  Takes src_data as 32 bit, 0xRRGGBBxx data.
@@ -70,6 +91,9 @@ int tje_encode_to_file(const unsigned char*     src_data,
                        const int                width,
                        const int                height,
                        const char*              dest_path);
+
+
+
 
 // ============================================================
 // Internal
@@ -122,20 +146,17 @@ typedef struct TJEArena_s
     int8_t* ptr;
 } TJEArena;
 
-// =========================================
-// ==== TJEArena creation                  ====
-// =========================================
-
 // Create a root arena from a memory block.
 static TJEArena tjei_arena_init(void* base, size_t size);
 
 // Create a child arena.
 static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size);
-// =========================================
-// ====          Allocation             ====
-// =========================================
-#define      tjei_arena_alloc_elem(arena, T)         (T *)tjei_arena_alloc_bytes((arena), sizeof(T))
-#define      tjei_arena_alloc_array(arena, count, T) (T *)tjei_arena_alloc_bytes((arena), (count) * sizeof(T))
+
+// Allocation
+
+#define tjei_arena_alloc_elem(arena, T) (T *)tjei_arena_alloc_bytes((arena), sizeof(T))
+#define tjei_arena_alloc_array(arena, count, T) (T *)tjei_arena_alloc_bytes((arena), \
+                                                                            (count) * sizeof(T))
 static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes);
 
 // =========================================
@@ -144,23 +165,6 @@ static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes);
 
 #define tjei_arena_available_space(arena)    ((arena)->size - (arena)->count)
 #define ARENA_VALIDATE(arena)           assert ((arena)->num_children == 0)
-
-
-#define tjei_arena_array(a, type, size) (type *)tjei_arena__array_typeless(a, sizeof(type) * size)
-#define array_push(a, e) (tjei_arena__array_try_grow(a), a[tjei_arena__array_header(a)->count - 1] = e)
-#define array_reset(a) (tjei_arena__array_header(a)->count = 0)
-#define array_count(a) (tjei_arena__array_header(a)->count)
-
-#pragma pack(push, 1)
-typedef struct
-{
-    size_t size;
-    size_t count;
-} ArrayHeader;
-#pragma pack(pop)
-
-#define tjei_arena__array_header(array) \
-    ((ArrayHeader*)((uint8_t*)array - sizeof(ArrayHeader)))
 
 static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes)
 {
@@ -204,7 +208,7 @@ static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size)
 // Macros for types
 // ============================================================
 
-typedef struct
+typedef struct TJEState_s
 {
     uint8_t*  ehuffsize[4];
     uint16_t* ehuffcode[4];
@@ -229,7 +233,7 @@ enum
 // ============================================================
 // Table definitions.
 //
-// The spec defines default reasonably good quantization matrices and huffman
+// The spec defines tjei_default reasonably good quantization matrices and huffman
 // specification tables.
 //
 //
@@ -241,7 +245,7 @@ enum
 
 
 // K.1 - suggested luminance QT
-static uint8_t default_qt_luma_from_spec[] =
+static uint8_t tjei_default_qt_luma_from_spec[] =
 {
    16,11,10,16, 24, 40, 51, 61,
    12,12,14,19, 26, 58, 60, 55,
@@ -253,7 +257,7 @@ static uint8_t default_qt_luma_from_spec[] =
    72,92,95,98,112,100,103, 99,
 };
 
-static uint8_t default_qt_chroma_from_spec[] =
+static uint8_t tjei_default_qt_chroma_from_spec[] =
 {
     // K.1 - suggested chrominance QT
 
@@ -267,7 +271,7 @@ static uint8_t default_qt_chroma_from_spec[] =
    99,99,99,99,99,99,99,99,
 };
 
-static uint8_t default_qt_chroma_from_paper[] =
+static uint8_t tjei_default_qt_chroma_from_paper[] =
 {
     // Example QT from JPEG paper
    16,  12, 14, 14, 18, 24, 49, 72,
@@ -280,7 +284,7 @@ static uint8_t default_qt_chroma_from_paper[] =
    103, 55, 56, 62, 77, 92, 101, 99,
 };
 
-static uint8_t default_qt_all_ones[] =
+static uint8_t tjei_default_qt_all_ones[] =
 {
     8,8,8,8,8,8,8,8,
     8,8,8,8,8,8,8,8,
@@ -292,40 +296,39 @@ static uint8_t default_qt_all_ones[] =
     8,8,8,8,8,8,8,8,
 };
 
-static uint8_t* default_qt_luma   = default_qt_all_ones;
-static uint8_t* default_qt_chroma = default_qt_all_ones;
-//static uint8_t* default_qt_chroma = default_qt_all_ones;
+static uint8_t* tjei_default_qt_luma   = tjei_default_qt_all_ones;
+static uint8_t* tjei_default_qt_chroma = tjei_default_qt_all_ones;
 
 // == Procedure to 'deflate' the huffman tree: JPEG spec, C.2
 
 // Number of 16 bit values for every code length. (K.3.3.1)
-static uint8_t default_ht_luma_dc_len[16] =
+static uint8_t tjei_default_ht_luma_dc_len[16] =
 {
     0,1,5,1,1,1,1,1,1,0,0,0,0,0,0,0
 };
 // values
-static uint8_t default_ht_luma_dc[12] =
+static uint8_t tjei_default_ht_luma_dc[12] =
 {
     0,1,2,3,4,5,6,7,8,9,10,11
 };
 
 // Number of 16 bit values for every code length. (K.3.3.1)
-static uint8_t default_ht_chroma_dc_len[16] =
+static uint8_t tjei_default_ht_chroma_dc_len[16] =
 {
     0,3,1,1,1,1,1,1,1,1,1,0,0,0,0,0
 };
 // values
-static uint8_t default_ht_chroma_dc[12] =
+static uint8_t tjei_default_ht_chroma_dc[12] =
 {
     0,1,2,3,4,5,6,7,8,9,10,11
 };
 
 // Same as above, but AC coefficients.
-static uint8_t default_ht_luma_ac_len[16] =
+static uint8_t tjei_default_ht_luma_ac_len[16] =
 {
     0,2,1,3,3,2,4,3,5,5,4,4,0,0,1,0x7d
 };
-static uint8_t default_ht_luma_ac[] =
+static uint8_t tjei_default_ht_luma_ac[] =
 {
     0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
     0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xA1, 0x08, 0x23, 0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0,
@@ -340,11 +343,11 @@ static uint8_t default_ht_luma_ac[] =
     0xF9, 0xFA
 };
 
-static uint8_t default_ht_chroma_ac_len[16] =
+static uint8_t tjei_default_ht_chroma_ac_len[16] =
 {
     0,2,1,2,4,4,3,4,7,5,4,4,0,1,2,0x77
 };
-static uint8_t default_ht_chroma_ac[] =
+static uint8_t tjei_default_ht_chroma_ac[] =
 {
     0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71,
     0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xA1, 0xB1, 0xC1, 0x09, 0x23, 0x33, 0x52, 0xF0,
@@ -365,7 +368,7 @@ static uint8_t default_ht_chroma_ac[] =
 // ============================================================
 
 // Zig-zag order:
-static uint8_t zig_zag_indices[64] =
+static uint8_t tjei_zig_zag_indices[64] =
 {
    0,  1,  5,  6, 14, 15, 27, 28,
    2,  4,  7, 13, 16, 26, 29, 42,
@@ -398,7 +401,7 @@ static const float kPi = 3.1415265f;
 
 #pragma pack(push)
 #pragma pack(1)
-typedef struct JPEGHeader_s
+typedef struct TJEJPEGHeader_s
 {
     uint16_t SOI;
     // JFIF header.
@@ -414,17 +417,17 @@ typedef struct JPEGHeader_s
     uint16_t com;
     uint16_t com_len;
     char com_str[sizeof(tjeik_com_str) - 1];
-} JPEGHeader;
+} TJEJPEGHeader;
 
-// Helper struct for FrameHeader (below).
-typedef struct ComponentSpec_s
+// Helper struct for TJEFrameHeader (below).
+typedef struct TJEComponentSpec_s
 {
     uint8_t  component_id;
     uint8_t  sampling_factors;    // most significant 4 bits: horizontal. 4 LSB: vertical (A.1.1)
     uint8_t  qt;                  // Quantization table selector.
-} ComponentSpec;
+} TJEComponentSpec;
 
-typedef struct FrameHeader_s
+typedef struct TJEFrameHeader_s
 {
     uint16_t SOF;
     uint16_t len;                         // 8 + 3 * frame.num_components
@@ -432,25 +435,25 @@ typedef struct FrameHeader_s
     uint16_t height;                      // aka. number of lines.
     uint16_t width;                       // aka. number of samples per line.
     uint8_t  num_components;              // For this implementation, will be equal to 3.
-    ComponentSpec component_spec[3];
-} FrameHeader;
+    TJEComponentSpec component_spec[3];
+} TJEFrameHeader;
 
-typedef struct FrameComponentSpec_s
+typedef struct TJEFrameComponentSpec_s
 {
-    uint8_t component_id;                 // Just as with ComponentSpec
+    uint8_t component_id;                 // Just as with TJEComponentSpec
     uint8_t dc_ac;                        // (dc|ac)
-} FrameComponentSpec;
+} TJEFrameComponentSpec;
 
-typedef struct ScanHeader_s
+typedef struct TJEScanHeader_s
 {
     uint16_t SOS;
     uint16_t len;
     uint8_t num_components;  // 3.
-    FrameComponentSpec component_spec[3];
+    TJEFrameComponentSpec component_spec[3];
     uint8_t first;  // 0
     uint8_t last;  // 63
     uint8_t ah_al;  // o
-} ScanHeader;
+} TJEScanHeader;
 
 static int tjei_buffer_write(TJEArena* buffer, void* data, size_t num_bytes, int num_elements)
 {
@@ -490,7 +493,7 @@ typedef enum
 {
     DC = 0,
     AC = 1
-} HuffmanTableClass;
+} TJEHuffmanTableClass;
 
 static int tjei_write_DHT(TJEArena* buffer,
                           uint8_t* matrix_len,
@@ -807,7 +810,7 @@ static void tjei_encode_and_write_DU(
             fval -= 128;
         }
         int8_t val = (int8_t)fval;
-        du[zig_zag_indices[i]] = val;
+        du[tjei_zig_zag_indices[i]] = val;
         if (mse)
         {
             float reconstructed = ((float)val) * qt[i];
@@ -913,7 +916,7 @@ enum
     CHROMA_AC,
 };
 
-struct processed_qt
+struct TJEProcessedQT
 {
     float chroma[64];
     float luma[64];
@@ -924,15 +927,15 @@ static void tje_init (TJEArena* arena, TJEState* state)
 {
     assert(state);
 
-    state->ht_bits[LUMA_DC]   = default_ht_luma_dc_len;
-    state->ht_bits[LUMA_AC]   = default_ht_luma_ac_len;
-    state->ht_bits[CHROMA_DC] = default_ht_chroma_dc_len;
-    state->ht_bits[CHROMA_AC] = default_ht_chroma_ac_len;
+    state->ht_bits[LUMA_DC]   = tjei_default_ht_luma_dc_len;
+    state->ht_bits[LUMA_AC]   = tjei_default_ht_luma_ac_len;
+    state->ht_bits[CHROMA_DC] = tjei_default_ht_chroma_dc_len;
+    state->ht_bits[CHROMA_AC] = tjei_default_ht_chroma_ac_len;
 
-    state->ht_vals[LUMA_DC]   = default_ht_luma_dc;
-    state->ht_vals[LUMA_AC]   = default_ht_luma_ac;
-    state->ht_vals[CHROMA_DC] = default_ht_chroma_dc;
-    state->ht_vals[CHROMA_AC] = default_ht_chroma_ac;
+    state->ht_vals[LUMA_DC]   = tjei_default_ht_luma_dc;
+    state->ht_vals[LUMA_AC]   = tjei_default_ht_luma_ac;
+    state->ht_vals[CHROMA_DC] = tjei_default_ht_chroma_dc;
+    state->ht_vals[CHROMA_AC] = tjei_default_ht_chroma_ac;
 
     uint64_t spec_tables_len[4] = { 0 };
 
@@ -983,7 +986,7 @@ static int tje_encode_main(
         return 1;
     }
 
-    struct processed_qt pqt;
+    struct TJEProcessedQT pqt;
     // Again, taken from classic japanese implementation.
     //
     /* For float AA&N IDCT method, divisors are equal to quantization
@@ -1021,7 +1024,7 @@ static int tje_encode_main(
     // Assuming that the compression ratio will be lower than 0.5.
     state->buffer = tjei_arena_spawn(arena, (width * height * 3) / 2);
     { // Write header
-        JPEGHeader header;
+        TJEJPEGHeader header;
         // JFIF header.
         header.SOI = tjei_be_word(0xffd8);  // Sequential DCT
         header.APP0 = tjei_be_word(0xffe0);
@@ -1035,7 +1038,7 @@ static int tje_encode_main(
         // Comment
         header.com = tjei_be_word(0xfffe);
         memcpy(header.com_str, (void*)tjeik_com_str, sizeof(tjeik_com_str) - 1); // Skip the 0-bit
-        result |= tjei_buffer_write(&state->buffer, &header, sizeof(JPEGHeader), 1);
+        result |= tjei_buffer_write(&state->buffer, &header, sizeof(TJEJPEGHeader), 1);
     }
 
     // Write quantization tables.
@@ -1045,7 +1048,7 @@ static int tje_encode_main(
     assert(result == TJE_OK);
 
     {  // Write the frame marker.
-        FrameHeader header;
+        TJEFrameHeader header;
         header.SOF = tjei_be_word(0xffc0);
         header.len = tjei_be_word(8 + 3 * 3);
         header.precision = 8;
@@ -1062,7 +1065,7 @@ static int tje_encode_main(
         };
         for (int i = 0; i < 3; ++i)
         {
-            ComponentSpec spec;
+            TJEComponentSpec spec;
             spec.component_id = (uint8_t)(i + 1);  // No particular reason. Just 1, 2, 3.
             spec.sampling_factors = (uint8_t)0x11;
             spec.qt = tables[i];
@@ -1070,7 +1073,7 @@ static int tje_encode_main(
             header.component_spec[i] = spec;
         }
         // Write to file.
-        result = tjei_buffer_write(&state->buffer, &header, sizeof(FrameHeader), 1);
+        result = tjei_buffer_write(&state->buffer, &header, sizeof(TJEFrameHeader), 1);
         assert(result == TJE_OK);
     }
 
@@ -1086,7 +1089,7 @@ static int tje_encode_main(
 
     // Write start of scan
     {
-        ScanHeader header;
+        TJEScanHeader header;
         header.SOS = tjei_be_word(0xffda);
         header.len = tjei_be_word((uint16_t)(6 + (2 * 3)));
         header.num_components = 3;
@@ -1099,7 +1102,7 @@ static int tje_encode_main(
         };
         for (int i = 0; i < 3; ++i)
         {
-            FrameComponentSpec cs;
+            TJEFrameComponentSpec cs;
             // Must be equal to component_id from frame header above.
             cs.component_id = (uint8_t)(i + 1);
             cs.dc_ac = (uint8_t)tables[i];
@@ -1109,7 +1112,7 @@ static int tje_encode_main(
         header.first = 0;
         header.last  = 63;
         header.ah_al = 0;
-        result = tjei_buffer_write(&state->buffer, &header, sizeof(ScanHeader), 1);
+        result = tjei_buffer_write(&state->buffer, &header, sizeof(TJEScanHeader), 1);
         assert(result == TJE_OK);
     }
 
@@ -1221,8 +1224,8 @@ int tje_encode_to_file(
 
     TJEState state;// = {};
 
-    state.qt_luma   = default_qt_luma;
-    state.qt_chroma = default_qt_chroma;
+    state.qt_luma   = tjei_default_qt_luma;
+    state.qt_chroma = tjei_default_qt_chroma;
 
     // width * height * 3 is probably enough memory for the image + various structures.
     size_t heap_size = width * height * 3;

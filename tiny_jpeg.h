@@ -1,5 +1,5 @@
 /**
- * tiny_jpeg.cc
+ * tiny_jpeg.h
  *
  * Tiny JPEG Encoder
  *  - Sergio Gonzalez

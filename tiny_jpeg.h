@@ -39,7 +39,6 @@
 
 
 
-
 // Here is an example program that loads a bmp with stb_image and writes it
 // with Tiny JPEG
 
@@ -69,7 +68,6 @@ int main()
 
 
 
-
 #ifdef __cplusplus
 extern "C"
 {
@@ -79,7 +77,6 @@ extern "C"
 // ============================================================
 // Public interface:
 // ============================================================
-
 
 
 
@@ -111,6 +108,13 @@ int tje_encode_to_file(const unsigned char*     src_data,
 #include <malloc.h>
 #define tje_malloc malloc
 #endif
+
+#ifndef tje_free
+#include <malloc.h>
+#define tje_free(x) free((x)); x = 0;
+#endif
+
+
 
 #ifdef _WIN32
 
@@ -498,7 +502,7 @@ typedef enum
 static int tjei_write_DHT(TJEArena* buffer,
                           uint8_t* matrix_len,
                           uint8_t* matrix_val,
-                          HuffmanTableClass ht_class,
+                          TJEHuffmanTableClass ht_class,
                           uint8_t id)
 {
     assert(buffer);
@@ -1244,7 +1248,7 @@ int tje_encode_to_file(
 
     result |= fclose(file_out);
 
-    free(big_chunk_of_memory);
+    tje_free(big_chunk_of_memory);
 
     return result;
 }

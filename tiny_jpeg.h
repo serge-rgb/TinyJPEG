@@ -156,6 +156,8 @@ static TJEArena tjei_arena_init(void* base, size_t size);
 // Create a child arena.
 static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size);
 
+static void tjei_arena_reset(TJEArena* arena);
+
 // Allocation
 
 #define tjei_arena_alloc_elem(arena, T) (T *)tjei_arena_alloc_bytes((arena), sizeof(T))
@@ -207,10 +209,11 @@ static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size)
     return child;
 }
 
-
-// ============================================================
-// Macros for types
-// ============================================================
+static void tjei_arena_reset(TJEArena* arena)
+{
+    memset (arena->ptr, 0, arena->count);
+    arena->count = 0;
+}
 
 typedef struct TJEState_s
 {

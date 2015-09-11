@@ -105,12 +105,20 @@ int tje_encode_to_file(const unsigned char*     src_data,
 
 
 #ifndef tje_malloc
+#if defined(_WIN32) || defined(__linux__)
 #include <malloc.h>
+#elif defined(__MACH__)
+#include <malloc/malloc.h>
+#endif
 #define tje_malloc malloc
 #endif
 
 #ifndef tje_free
+#if defined(_WIN32) || defined(__linux__)
 #include <malloc.h>
+#elif defined(__MACH__)
+#include <malloc/malloc.h>
+#endif
 #define tje_free(x) free((x)); x = 0;
 #endif
 
@@ -147,7 +155,7 @@ typedef struct TJEArena_s
 {
     size_t  size;
     size_t  count;
-    int8_t* ptr;
+    uint8_t* ptr;
 } TJEArena;
 
 // Create a root arena from a memory block.
@@ -187,7 +195,7 @@ static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes)
 static TJEArena tjei_arena_init(void* base, size_t size)
 {
     TJEArena arena = { 0 };
-    arena.ptr = (int8_t*)base;
+    arena.ptr = (uint8_t*)base;
     if (arena.ptr)
     {
         arena.size   = size;
@@ -197,7 +205,7 @@ static TJEArena tjei_arena_init(void* base, size_t size)
 
 static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size)
 {
-    void* ptr = tjei_arena_alloc_bytes(parent, size);
+    uint8_t* ptr = (uint8_t*)tjei_arena_alloc_bytes(parent, size);
     assert(ptr);
 
     TJEArena child = { 0 };

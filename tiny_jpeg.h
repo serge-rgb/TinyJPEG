@@ -12,11 +12,14 @@
  *
  * It is written in C99. And depends on the C standard library.
  *
+ * 
  * Tested on:
  *  Linux x64 (clang)
+ *  Windows
+ *  OSX
  *
  * TODO:
- *  - tje_encode_to_buffer
+ *  - (!!) Right now it only encodes sizes WxH where W and H are multiples of eight.
  *  - SSE2 opts
  *
  * This software is in the public domain. Where that dedication is not

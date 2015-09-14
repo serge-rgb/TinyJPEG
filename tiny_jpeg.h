@@ -12,7 +12,7 @@
  *
  * It is written in C99. And depends on the C standard library.
  *
- * 
+ *
  * Tested on:
  *  Linux x64 (clang)
  *  Windows
@@ -547,10 +547,10 @@ static int tjei_write_DHT(TJEArena* buffer,
 // ============================================================
 
 // Returns all code sizes from the BITS specification (JPEG C.3)
-static uint8_t* tjei_huff_get_code_lengths(TJEArena* arena, uint8_t* bits, int64_t size)
+static uint8_t* tjei_huff_get_code_lengths(TJEArena* arena, uint8_t* bits, int32_t num_codes)
 {
     // Add 1 for the trailing 0, used as a terminator in tjei_huff_get_codes()
-    int64_t huffsize_sz = sizeof(uint8_t) * (size + 1);
+    int64_t huffsize_sz = sizeof(uint8_t) * (num_codes + 1);
     uint8_t* huffsize = (uint8_t*)tjei_arena_alloc_bytes(arena, (size_t)huffsize_sz);
 
     int k = 0;
@@ -558,15 +558,14 @@ static uint8_t* tjei_huff_get_code_lengths(TJEArena* arena, uint8_t* bits, int64
     {
         for (int j = 0; j < bits[i]; ++j)
         {
-            assert(k < size);
             huffsize[k++] = (uint8_t)(i + 1);
         }
-        assert(k < size + 1);
         huffsize[k] = 0;
     }
     return huffsize;
 }
 
+// Fills out the prefixes for each code.
 static uint16_t* tjei_huff_get_codes(TJEArena* arena, uint8_t* huffsize, int64_t count)
 {
     uint16_t code = 0;
@@ -955,7 +954,8 @@ static void tje_init (TJEArena* arena, TJEState* state)
     state->ht_vals[CHROMA_DC] = tjei_default_ht_chroma_dc;
     state->ht_vals[CHROMA_AC] = tjei_default_ht_chroma_ac;
 
-    uint64_t spec_tables_len[4] = { 0 };
+    // How many codes in total for each of LUMA_(DC|AC) and CHROMA_(DC|AC)
+    int32_t spec_tables_len[4] = { 0 };
 
     for (int i = 0; i < 4; ++i)
     {
@@ -977,16 +977,18 @@ static void tje_init (TJEArena* arena, TJEState* state)
         for (int i = 0; i < 4; ++i)
         {
             int64_t count = spec_tables_len[i];
-            tjei_huff_get_extended(
-                    arena,
-                    state->ht_vals[i],
-                    huffsize[i],
-                    huffcode[i], count,
-                    &(state->ehuffsize[i]),
-                    &(state->ehuffcode[i]));
+            tjei_huff_get_extended(arena,
+                                   state->ht_vals[i],
+                                   huffsize[i],
+                                   huffcode[i], count,
+                                   &(state->ehuffsize[i]),
+                                   &(state->ehuffcode[i]));
         }
     }
 }
+
+// Only supporting RGB right now..
+#define TJEI_BPP 3
 
 static int tje_encode_main(
         TJEArena* arena,
@@ -996,13 +998,6 @@ static int tje_encode_main(
         const int height)
 {
     int result = TJE_OK;
-
-    // TODO: support arbitrary resolutions.
-    if (((height % 8) != 0) || ((width % 8) != 0))
-    {
-        tje_log("Supported resolutions are width and height multiples of 8.");
-        return 1;
-    }
 
     struct TJEProcessedQT pqt;
     // Again, taken from classic japanese implementation.
@@ -1035,12 +1030,8 @@ static int tje_encode_main(
         }
     }
 
-    // ============================================================
-    //  Actual write-to-file.
-    // ============================================================
-
     // Assuming that the compression ratio will be lower than 0.5.
-    state->buffer = tjei_arena_spawn(arena, (width * height * 3) / 2);
+    state->buffer = tjei_arena_spawn(arena, tjei_arena_available_space(arena) / 2);
     { // Write header
         TJEJPEGHeader header;
         // JFIF header.
@@ -1072,16 +1063,16 @@ static int tje_encode_main(
         header.precision = 8;
         assert(width <= 0xffff);
         assert(height <= 0xffff);
-        header.height = tjei_be_word((uint16_t)height);
         header.width = tjei_be_word((uint16_t)width);
-        header.num_components = 3;
+        header.height = tjei_be_word((uint16_t)height);
+        header.num_components = TJEI_BPP;
         uint8_t tables[3] =
         {
             0,  // Luma component gets luma table (see tjei_write_DQT call above.)
             1,  // Chroma component gets chroma table
             1,  // Chroma component gets chroma table
         };
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < TJEI_BPP; ++i)
         {
             TJEComponentSpec spec;
             spec.component_id = (uint8_t)(i + 1);  // No particular reason. Just 1, 2, 3.
@@ -1101,8 +1092,8 @@ static int tje_encode_main(
                              state->ht_bits[LUMA_AC], state->ht_vals[LUMA_AC], AC, 0);
     result |= tjei_write_DHT(&state->buffer,
                              state->ht_bits[CHROMA_DC], state->ht_vals[CHROMA_DC], DC, 1);
-    result |= tjei_write_DHT(&state->buffer
-                             , state->ht_bits[CHROMA_AC], state->ht_vals[CHROMA_AC], AC, 1);
+    result |= tjei_write_DHT(&state->buffer,
+                             state->ht_bits[CHROMA_AC], state->ht_vals[CHROMA_AC], AC, 1);
     assert(result == TJE_OK);
 
     // Write start of scan
@@ -1110,7 +1101,7 @@ static int tje_encode_main(
         TJEScanHeader header;
         header.SOS = tjei_be_word(0xffda);
         header.len = tjei_be_word((uint16_t)(6 + (2 * 3)));
-        header.num_components = 3;
+        header.num_components = TJEI_BPP;
 
         uint8_t tables[3] =
         {
@@ -1135,7 +1126,6 @@ static int tje_encode_main(
     }
 
     // Write compressed data.
-    static const int bytes_per_pixel = 3;  // Only supporting RGB right now..
 
     float du_y[64];
     float du_b[64];
@@ -1152,6 +1142,16 @@ static int tje_encode_main(
 
     state->mse = 0;
 
+
+#if 0
+#define PAD_TO_8(x) (( ((x) % 8) == 0 ) ? (x) : (x) + 8 - ((x) % 8))
+    int padded_width = PAD_TO_8(real_width);
+    int padded_height = PAD_TO_8(real_height);
+    assert ((padded_width % 8) == 0);
+    assert ((padded_height % 8) == 0);
+#undef PAD_TO_8
+#endif
+
     for (int y = 0; y < height; y += 8)
     {
         for (int x = 0; x < width; x += 8)
@@ -1161,21 +1161,30 @@ static int tje_encode_main(
             {
                 for (int off_x = 0; off_x < 8; ++off_x)
                 {
-                    int index = (((y + off_y) * width) + (x + off_x)) * bytes_per_pixel;
-                    assert(index < width * height * bytes_per_pixel);
-
-                    uint8_t r = src_data[index + 0];
-                    uint8_t g = src_data[index + 1];
-                    uint8_t b = src_data[index + 2];
-
-                    float y  = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
-                    float cb = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
-                    float cr = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
-
                     int block_index = (off_y * 8 + off_x);
-                    du_y[block_index] = y;
-                    du_b[block_index] = cb;
-                    du_r[block_index] = cr;
+                    if (x + off_x < width && y + off_y < height)
+                    {
+                        int src_index = (((y + off_y) * width) + (x + off_x)) * TJEI_BPP;
+                        assert(src_index < width * height * TJEI_BPP);
+
+                        uint8_t r = src_data[src_index + 0];
+                        uint8_t g = src_data[src_index + 1];
+                        uint8_t b = src_data[src_index + 2];
+
+                        float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
+                        float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
+                        float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
+
+                        du_y[block_index] = luma;
+                        du_b[block_index] = cb;
+                        du_r[block_index] = cr;
+                    }
+                    else
+                    {
+                        du_y[block_index] = 0.0f;
+                        du_b[block_index] = 0.0f;
+                        du_r[block_index] = 0.0f;
+                    }
                 }
             }
 
@@ -1221,7 +1230,7 @@ static int tje_encode_main(
     }
 
     state->compression_ratio =
-            (float)state->buffer.count / (float)(width * height * bytes_per_pixel);
+            (float)state->buffer.count / (float)(width * height * TJEI_BPP);
 
     return result;
 }
@@ -1246,7 +1255,7 @@ int tje_encode_to_file(
     state.qt_chroma = tjei_default_qt_chroma;
 
     // width * height * 3 is probably enough memory for the image + various structures.
-    size_t heap_size = width * height * 3;
+    size_t heap_size = width * height * 3 + 1024 * 1024;
     void* big_chunk_of_memory = tje_malloc(heap_size);
 
     assert(big_chunk_of_memory);

@@ -19,8 +19,8 @@
  *  OSX
  *
  * TODO:
- *  - [BUG] - Non multiple-of-8 resolutions have a weird block phasing bug
- *  - SSE2 opts
+ *  - [BUG] - Some images produce a weird block phasing artifact.
+ *  - SSE2 opts.
  *
  * This software is in the public domain. Where that dedication is not
  * recognized, you are granted a perpetual, irrevocable license to copy
@@ -82,23 +82,41 @@ extern "C"
 // ============================================================
 
 
-
-
 // Usage:
-//  Takes src_data as 32 bit, 0xRRGGBBxx data.
-//  Writes encoded image to dest_path.
-int tje_encode_to_file(const unsigned char*     src_data,
-                       const int                width,
-                       const int                height,
-                       const char*              dest_path);
+//  Takes bitmap data and writes a JPEG-encoded image to disk.
+//
+//  PARAMETERS
+//      src_data:           pointer to the pixel data.
+//      width, height:      image size in pixels
+//      num_components:     3 is RGB. 4 is RGBA. Those are the only supported values
+//      dest_path:          filename to which we will write. e.g. "out.jpg"
+//
+//  RETURN:
+//      TJE_OK (0), or an error. Returned values are defined below.
+
+int tje_encode_to_file(
+        const unsigned char* src_data,
+        const int width,
+        const int height,
+        const int num_components,
+        const char* dest_path);
 
 
+// Return values
+enum
+{
+    TJE_OK                      = 0,
+    TJE_BUFFER_OVERFLOW         = (1 << 0),
+    TJE_INVALID_NUM_COMPONENTS  = (1 << 1),
+};
 
 
 // ============================================================
 // Internal
 // ============================================================
 #ifdef TJE_IMPLEMENTATION
+
+
 // C std lib
 #include <assert.h>
 #include <inttypes.h>
@@ -148,12 +166,6 @@ int tje_encode_to_file(const unsigned char*     src_data,
 #define tje_log(msg)
 #endif  // NDEBUG
 
-// =========================================
-//        Implementation
-// =========================================
-
-// ============================================================
-// ============================================================
 typedef struct TJEArena_s
 {
     size_t  size;
@@ -169,19 +181,13 @@ static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size);
 
 static void tjei_arena_reset(TJEArena* arena);
 
-// Allocation
+static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes);
 
 #define tjei_arena_alloc_elem(arena, T) (T *)tjei_arena_alloc_bytes((arena), sizeof(T))
 #define tjei_arena_alloc_array(arena, count, T) (T *)tjei_arena_alloc_bytes((arena), \
                                                                             (count) * sizeof(T))
-static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes);
-
-// =========================================
-// ====        Utility                  ====
-// =========================================
-
 #define tjei_arena_available_space(arena)    ((arena)->size - (arena)->count)
-#define ARENA_VALIDATE(arena)           assert ((arena)->num_children == 0)
+
 
 static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes)
 {
@@ -241,12 +247,6 @@ typedef struct TJEState_s
     float mse;  // Mean square error.
     float compression_ratio;  // Size in bytes of the compressed image.
 } TJEState;
-
-enum
-{
-    TJE_OK              = (1 << 0),
-    TJE_BUFFER_OVERFLOW = (1 << 1),
-};
 
 // ============================================================
 // Table definitions.
@@ -995,9 +995,15 @@ static int tje_encode_main(
         TJEState* state,
         const unsigned char* src_data,
         const int width,
-        const int height)
+        const int height,
+        const int src_num_components)
 {
     int result = TJE_OK;
+
+    if (src_num_components != 3 && src_num_components != 4)
+    {
+        return TJE_INVALID_NUM_COMPONENTS;
+    }
 
     struct TJEProcessedQT pqt;
     // Again, taken from classic japanese implementation.
@@ -1164,8 +1170,8 @@ static int tje_encode_main(
                     int block_index = (off_y * 8 + off_x);
                     if (x + off_x < width && y + off_y < height)
                     {
-                        int src_index = (((y + off_y) * width) + (x + off_x)) * TJEI_BPP;
-                        assert(src_index < width * height * TJEI_BPP);
+                        int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
+                        assert(src_index < width * height * src_num_components);
 
                         uint8_t r = src_data[src_index + 0];
                         uint8_t g = src_data[src_index + 1];
@@ -1240,6 +1246,7 @@ int tje_encode_to_file(
         const unsigned char* src_data,
         const int width,
         const int height,
+        const int num_components,
         const char* dest_path)
 {
     FILE* file_out = fopen(dest_path, "wb");
@@ -1264,7 +1271,7 @@ int tje_encode_to_file(
 
     tje_init(&arena, &state);
 
-    int result = tje_encode_main(&arena, &state, src_data, width, height);
+    int result = tje_encode_main(&arena, &state, src_data, width, height, num_components);
     assert(result == TJE_OK);
 
     fwrite(state.buffer.ptr, state.buffer.count, 1, file_out);

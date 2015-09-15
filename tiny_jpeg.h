@@ -62,7 +62,11 @@ int main()
         puts("Could not find file");
         return EXIT_FAILURE;
     }
-    tje_encode_to_file(data, width, height, "out.jpg");
+
+    if (TJE_OK != tje_encode_to_file(data, width, height, num_components, "out.jpg"))
+    {
+        deal_with_error();
+    }
 
     return EXIT_SUCCESS;
 }

@@ -19,7 +19,7 @@
  *  OSX
  *
  * TODO:
- *  - (!!) Right now it only encodes sizes WxH where W and H are multiples of eight.
+ *  - [BUG] - Non multiple-of-8 resolutions have a weird block phasing bug
  *  - SSE2 opts
  *
  * This software is in the public domain. Where that dedication is not

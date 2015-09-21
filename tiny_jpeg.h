@@ -19,7 +19,9 @@
  *  OSX
  *
  * TODO:
- *  - [BUG] - Some images produce a weird block phasing artifact.
+ *  - add callback for buffer overflow
+ *  - only use malloc for coded data buffer
+ *  - add idct and calculate MSE if param passed
  *  - SSE2 opts.
  *
  * This software is in the public domain. Where that dedication is not
@@ -120,6 +122,7 @@ enum
 // ============================================================
 #ifdef TJE_IMPLEMENTATION
 
+// Only use zero for debugging and/or inspection.
 #define TJE_USE_FAST_DCT 1
 
 // C std lib
@@ -189,13 +192,9 @@ static TJEArena tjei_arena_init(void* base, size_t size);
 // Create a child arena.
 static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size);
 
-static void tjei_arena_reset(TJEArena* arena);
-
 static void* tjei_arena_alloc_bytes(TJEArena* arena, size_t num_bytes);
 
-#define tjei_arena_alloc_elem(arena, T) (T *)tjei_arena_alloc_bytes((arena), sizeof(T))
-#define tjei_arena_alloc_array(arena, count, T) (T *)tjei_arena_alloc_bytes((arena), \
-                                                                            (count) * sizeof(T))
+#define tjei_arena_alloc_array(arena, n, T) (T*)tjei_arena_alloc_bytes((arena), (n) * sizeof(T))
 #define tjei_arena_available_space(arena)    ((arena)->size - (arena)->count)
 
 
@@ -234,12 +233,6 @@ static TJEArena tjei_arena_spawn(TJEArena* parent, size_t size)
     }
 
     return child;
-}
-
-static void tjei_arena_reset(TJEArena* arena)
-{
-    memset (arena->ptr, 0, arena->count);
-    arena->count = 0;
 }
 
 typedef struct TJEState_s
@@ -879,15 +872,7 @@ static void tjei_encode_and_write_DU(
     {
         float fval = dct_mcu[i] / 8.0f;
         fval *= qt[i];
-        //int8_t val = (int8_t)(roundf(fval));
         fval = (fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f);
-        //int8_t val = (int8_t)fval;
-        // Better way: Save a whole lot of branching.
-        /* { */
-        /*     fval += 1024; */
-        /*     fval = floorf(fval + 0.5f); */
-        /*     fval -= 1024; */
-        /* } */
         int val = (int)fval;
         du[tjei_zig_zag_indices[i]] = val;
         if (mse)
@@ -908,16 +893,7 @@ static void tjei_encode_and_write_DU(
     for (int i = 0; i < 64; ++i)
     {
         float fval = dct_mcu[i] / (qt[i]);
-        //int8_t val = (int8_t)(roundf(fval));
         int val = (int)((fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f));
-        //int8_t val = (int8_t)fval;
-        // Better way: Save a whole lot of branching.
-        /* { */
-        /*     fval += 128; */
-        /*     fval = floorf(fval + 0.5f); */
-        /*     fval -= 128; */
-        /* } */
-        /* int8_t val = (int8_t)fval; */
         du[tjei_zig_zag_indices[i]] = val;
         if (mse)
         {
@@ -975,7 +951,7 @@ static void tjei_encode_and_write_DU(
         {
             ++zero_count;
             ++i;
-            if (zero_count == 15)
+            if (zero_count == 16)
             {
                 // encode (ff,00) == 0xf0
                 result = tjei_write_bits(buffer,
@@ -988,8 +964,12 @@ static void tjei_encode_and_write_DU(
         {
             tjei_calculate_variable_length_int(du[i], vli);
 
-            assert(zero_count < 0xf);
+            assert(zero_count < 0x10);
             assert(vli[1] <= 10);
+			if (zero_count >= 0x10)
+			{
+				int ok = 1;
+			}
 
             uint16_t sym1 = ((uint16_t)zero_count << 4) | vli[1];
 
@@ -1079,16 +1059,14 @@ static void tje_init (TJEArena* arena, TJEState* state)
     }
 }
 
-// Only supporting RGB right now..
-#define TJEI_BPP 3
-
 static int tje_encode_main(
         TJEArena* arena,
         TJEState* state,
         const unsigned char* src_data,
         const int width,
         const int height,
-        const int src_num_components)
+        const int src_num_components,
+        int64_t* mse_x3)
 {
     int result = TJE_OK;
 
@@ -1132,6 +1110,7 @@ static int tje_encode_main(
 
     // Assuming that the compression ratio will be lower than 0.5.
     state->buffer = tjei_arena_spawn(arena, tjei_arena_available_space(arena) / 2);
+
     { // Write header
         TJEJPEGHeader header;
         // JFIF header.
@@ -1140,12 +1119,16 @@ static int tje_encode_main(
         header.jfif_len = tjei_be_word(0x0016);
         memcpy(header.jfif_id, (void*)tjeik_jfif_id, 5);
         header.version = tjei_be_word(0x0102);
-        header.units = 0x01;
-        header.x_density = tjei_be_word(0x0060);  // 96 DPI
-        header.y_density = tjei_be_word(0x0060);  // 96 DPI
+        //header.units = 0x01;
+        //header.x_density = tjei_be_word(0x0060);  // 96 DPI
+        //header.y_density = tjei_be_word(0x0060);  // 96 DPI
+        header.units = 0x00;
+        header.x_density = tjei_be_word(0x0000);
+        header.y_density = tjei_be_word(0x0000);
         header.thumb_size = 0;
-        // Comment
+        /* // Comment */
         header.com = tjei_be_word(0xfffe);
+        header.com_len = 16 + sizeof(tjeik_com_str) - 1;
         memcpy(header.com_str, (void*)tjeik_com_str, sizeof(tjeik_com_str) - 1); // Skip the 0-bit
         result |= tjei_buffer_write(&state->buffer, &header, sizeof(TJEJPEGHeader), 1);
     }
@@ -1165,14 +1148,14 @@ static int tje_encode_main(
         assert(height <= 0xffff);
         header.width = tjei_be_word((uint16_t)width);
         header.height = tjei_be_word((uint16_t)height);
-        header.num_components = TJEI_BPP;
+        header.num_components = 3;
         uint8_t tables[3] =
         {
             0,  // Luma component gets luma table (see tjei_write_DQT call above.)
             1,  // Chroma component gets chroma table
             1,  // Chroma component gets chroma table
         };
-        for (int i = 0; i < TJEI_BPP; ++i)
+        for (int i = 0; i < 3; ++i)
         {
             TJEComponentSpec spec;
             spec.component_id = (uint8_t)(i + 1);  // No particular reason. Just 1, 2, 3.
@@ -1201,7 +1184,7 @@ static int tje_encode_main(
         TJEScanHeader header;
         header.SOS = tjei_be_word(0xffda);
         header.len = tjei_be_word((uint16_t)(6 + (2 * 3)));
-        header.num_components = TJEI_BPP;
+        header.num_components = 3;
 
         uint8_t tables[3] =
         {
@@ -1240,11 +1223,6 @@ static int tje_encode_main(
     uint32_t bitbuffer = 0;
     uint32_t location = 0;
 
-    state->mse = 0;
-
-    //int debug_block = 10879;
-    int debug_block = 49150;
-    int block_i = 0;
 
     for (int y = 0; y < height; y += 8)
     {
@@ -1259,13 +1237,16 @@ static int tje_encode_main(
 
                     int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
 
-                    if((y + off_y) >= height)
+                    int col = x + off_x;
+                    int row = y + off_y;
+
+                    if(row >= height)
                     {
-                        src_index -= width*(y + off_y + 1 - height) * src_num_components;
+                        src_index -= (width * (row - height + 1)) * src_num_components;
                     }
-                    if((x + off_x) >= width)
+                    if(col >= width)
                     {
-                        src_index -= ((x + off_x) + 1 - width) * src_num_components;
+                        src_index -= (col - width + 1) * src_num_components;
                     }
                     assert(src_index < width * height * src_num_components);
 
@@ -1283,24 +1264,9 @@ static int tje_encode_main(
                 }
             }
 
-            if (block_i == debug_block)
-            {
-#if 1
-                for (int off_y = 0; off_y < 8; ++off_y)
-                    for (int off_x = 0; off_x < 8; ++off_x)
-                    {
-                        int block_index = (off_y * 8 + off_x);
-                        du_y[block_index] = 127.0f;
-                        du_b[block_index] = 0.0f;
-                        du_r[block_index] = 0.0f;
-                    }
-#endif
-                int foo = 0;
-
-            }
-
             // Process block:
             uint64_t block_mse = 0;  // Calculating only for luma right now.
+
             tjei_encode_and_write_DU(&state->buffer,
                                      du_y,
 #if TJE_USE_FAST_DCT
@@ -1339,16 +1305,8 @@ static int tje_encode_main(
 
 
             state->mse += (float)block_mse / (float)(width * height);
-            ++block_i;
         }
     }
-
-    char* buffer[1024];
-    char* b = (char*)buffer;
-    sprintf(b, "Total number of blocks: %d\n", block_i);
-    tje_log(b);
-    sprintf(b, "MSE: %f\n", state->mse);
-    tje_log(b);
 
     // Finish the image.
     {
@@ -1364,7 +1322,7 @@ static int tje_encode_main(
     }
 
     state->compression_ratio =
-            (float)state->buffer.count / (float)(width * height * TJEI_BPP);
+            (float)state->buffer.count / (float)(width * height * 3);
 
     return result;
 }
@@ -1399,7 +1357,7 @@ int tje_encode_to_file(
 
     tje_init(&arena, &state);
 
-    int result = tje_encode_main(&arena, &state, src_data, width, height, num_components);
+    int result = tje_encode_main(&arena, &state, src_data, width, height, num_components, NULL);
     assert(result == TJE_OK);
 
     fwrite(state.buffer.ptr, state.buffer.count, 1, file_out);

@@ -120,6 +120,7 @@ enum
 // ============================================================
 #ifdef TJE_IMPLEMENTATION
 
+#define TJE_USE_FAST_DCT 1
 
 // C std lib
 #include <assert.h>
@@ -148,7 +149,6 @@ enum
 #endif
 
 
-
 #ifdef _WIN32
 
 #include <windows.h>
@@ -169,6 +169,12 @@ enum
 #else  // NDEBUG
 #define tje_log(msg)
 #endif  // NDEBUG
+
+
+/* #define float double */
+/* #define cosf cos */
+/* #define floorf floor */
+/* #define ceilf ceil */
 
 typedef struct TJEArena_s
 {
@@ -306,7 +312,8 @@ static uint8_t tjei_default_qt_chroma_from_paper[] =
    103, 55, 56, 62, 77, 92, 101, 99,
 };
 
-static uint8_t tjei_default_qt_all_ones[] =
+#if 0
+static uint8_t tjei_default_qt_highest[] =
 {
     8,8,8,8,8,8,8,8,
     8,8,8,8,8,8,8,8,
@@ -317,9 +324,28 @@ static uint8_t tjei_default_qt_all_ones[] =
     8,8,8,8,8,8,8,8,
     8,8,8,8,8,8,8,8,
 };
+#else
+static uint8_t tjei_default_qt_highest[] =
+{
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+};
+#endif
 
-static uint8_t* tjei_default_qt_luma   = tjei_default_qt_all_ones;
-static uint8_t* tjei_default_qt_chroma = tjei_default_qt_all_ones;
+#if 0
+static uint8_t* tjei_default_qt_luma   = tjei_default_qt_luma_from_spec;
+static uint8_t* tjei_default_qt_chroma   = tjei_default_qt_luma_from_spec;
+//static uint8_t* tjei_default_qt_chroma = tjei_default_qt_chroma_from_spec;
+#else
+static uint8_t* tjei_default_qt_luma   = tjei_default_qt_highest;
+static uint8_t* tjei_default_qt_chroma = tjei_default_qt_highest;
+#endif
 
 // == Procedure to 'deflate' the huffman tree: JPEG spec, C.2
 
@@ -625,6 +651,9 @@ static void tjei_huff_get_extended(TJEArena* arena,
 }
 // ============================================================
 
+// Returns:
+//  out[1] : number of bits
+//  out[0] : bits
 static void tjei_calculate_variable_length_int(int value, uint16_t out[2])
 {
     int abs_val = value;
@@ -692,117 +721,145 @@ static int tjei_write_bits(TJEArena* buffer,
 //
 void fdct (float * data)
 {
-  float tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
-  float tmp10, tmp11, tmp12, tmp13;
-  float z1, z2, z3, z4, z5, z11, z13;
-  float *dataptr;
-  int ctr;
+    float tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
+    float tmp10, tmp11, tmp12, tmp13;
+    float z1, z2, z3, z4, z5, z11, z13;
+    float *dataptr;
+    int ctr;
 
-  /* Pass 1: process rows. */
+    /* Pass 1: process rows. */
 
-  dataptr = data;
-  for (ctr = 7; ctr >= 0; ctr--) {
-    tmp0 = dataptr[0] + dataptr[7];
-    tmp7 = dataptr[0] - dataptr[7];
-    tmp1 = dataptr[1] + dataptr[6];
-    tmp6 = dataptr[1] - dataptr[6];
-    tmp2 = dataptr[2] + dataptr[5];
-    tmp5 = dataptr[2] - dataptr[5];
-    tmp3 = dataptr[3] + dataptr[4];
-    tmp4 = dataptr[3] - dataptr[4];
+    dataptr = data;
+    for (ctr = 7; ctr >= 0; ctr--) {
+        tmp0 = dataptr[0] + dataptr[7];
+        tmp7 = dataptr[0] - dataptr[7];
+        tmp1 = dataptr[1] + dataptr[6];
+        tmp6 = dataptr[1] - dataptr[6];
+        tmp2 = dataptr[2] + dataptr[5];
+        tmp5 = dataptr[2] - dataptr[5];
+        tmp3 = dataptr[3] + dataptr[4];
+        tmp4 = dataptr[3] - dataptr[4];
 
-    /* Even part */
+        /* Even part */
 
-    tmp10 = tmp0 + tmp3;    /* phase 2 */
-    tmp13 = tmp0 - tmp3;
-    tmp11 = tmp1 + tmp2;
-    tmp12 = tmp1 - tmp2;
+        tmp10 = tmp0 + tmp3;    /* phase 2 */
+        tmp13 = tmp0 - tmp3;
+        tmp11 = tmp1 + tmp2;
+        tmp12 = tmp1 - tmp2;
 
-    dataptr[0] = tmp10 + tmp11; /* phase 3 */
-    dataptr[4] = tmp10 - tmp11;
+        dataptr[0] = tmp10 + tmp11; /* phase 3 */
+        dataptr[4] = tmp10 - tmp11;
 
-    z1 = (tmp12 + tmp13) * ((float) 0.707106781); /* c4 */
-    dataptr[2] = tmp13 + z1;    /* phase 5 */
-    dataptr[6] = tmp13 - z1;
+        z1 = (tmp12 + tmp13) * ((float) 0.707106781); /* c4 */
+        dataptr[2] = tmp13 + z1;    /* phase 5 */
+        dataptr[6] = tmp13 - z1;
 
-    /* Odd part */
+        /* Odd part */
 
-    tmp10 = tmp4 + tmp5;    /* phase 2 */
-    tmp11 = tmp5 + tmp6;
-    tmp12 = tmp6 + tmp7;
+        tmp10 = tmp4 + tmp5;    /* phase 2 */
+        tmp11 = tmp5 + tmp6;
+        tmp12 = tmp6 + tmp7;
 
-    /* The rotator is modified from fig 4-8 to avoid extra negations. */
-    z5 = (tmp10 - tmp12) * ((float) 0.382683433); /* c6 */
-    z2 = ((float) 0.541196100) * tmp10 + z5; /* c2-c6 */
-    z4 = ((float) 1.306562965) * tmp12 + z5; /* c2+c6 */
-    z3 = tmp11 * ((float) 0.707106781); /* c4 */
+        /* The rotator is modified from fig 4-8 to avoid extra negations. */
+        z5 = (tmp10 - tmp12) * ((float) 0.382683433); /* c6 */
+        z2 = ((float) 0.541196100) * tmp10 + z5; /* c2-c6 */
+        z4 = ((float) 1.306562965) * tmp12 + z5; /* c2+c6 */
+        z3 = tmp11 * ((float) 0.707106781); /* c4 */
 
-    z11 = tmp7 + z3;        /* phase 5 */
-    z13 = tmp7 - z3;
+        z11 = tmp7 + z3;        /* phase 5 */
+        z13 = tmp7 - z3;
 
-    dataptr[5] = z13 + z2;  /* phase 6 */
-    dataptr[3] = z13 - z2;
-    dataptr[1] = z11 + z4;
-    dataptr[7] = z11 - z4;
+        dataptr[5] = z13 + z2;  /* phase 6 */
+        dataptr[3] = z13 - z2;
+        dataptr[1] = z11 + z4;
+        dataptr[7] = z11 - z4;
 
-    dataptr += 8;     /* advance pointer to next row */
-  }
+        dataptr += 8;     /* advance pointer to next row */
+    }
 
-  /* Pass 2: process columns. */
+    /* Pass 2: process columns. */
 
-  dataptr = data;
-  for (ctr = 8-1; ctr >= 0; ctr--) {
-    tmp0 = dataptr[8*0] + dataptr[8*7];
-    tmp7 = dataptr[8*0] - dataptr[8*7];
-    tmp1 = dataptr[8*1] + dataptr[8*6];
-    tmp6 = dataptr[8*1] - dataptr[8*6];
-    tmp2 = dataptr[8*2] + dataptr[8*5];
-    tmp5 = dataptr[8*2] - dataptr[8*5];
-    tmp3 = dataptr[8*3] + dataptr[8*4];
-    tmp4 = dataptr[8*3] - dataptr[8*4];
+    dataptr = data;
+    for (ctr = 8-1; ctr >= 0; ctr--) {
+        tmp0 = dataptr[8*0] + dataptr[8*7];
+        tmp7 = dataptr[8*0] - dataptr[8*7];
+        tmp1 = dataptr[8*1] + dataptr[8*6];
+        tmp6 = dataptr[8*1] - dataptr[8*6];
+        tmp2 = dataptr[8*2] + dataptr[8*5];
+        tmp5 = dataptr[8*2] - dataptr[8*5];
+        tmp3 = dataptr[8*3] + dataptr[8*4];
+        tmp4 = dataptr[8*3] - dataptr[8*4];
 
-    /* Even part */
+        /* Even part */
 
-    tmp10 = tmp0 + tmp3;    /* phase 2 */
-    tmp13 = tmp0 - tmp3;
-    tmp11 = tmp1 + tmp2;
-    tmp12 = tmp1 - tmp2;
+        tmp10 = tmp0 + tmp3;    /* phase 2 */
+        tmp13 = tmp0 - tmp3;
+        tmp11 = tmp1 + tmp2;
+        tmp12 = tmp1 - tmp2;
 
-    dataptr[8*0] = tmp10 + tmp11; /* phase 3 */
-    dataptr[8*4] = tmp10 - tmp11;
+        dataptr[8*0] = tmp10 + tmp11; /* phase 3 */
+        dataptr[8*4] = tmp10 - tmp11;
 
-    z1 = (tmp12 + tmp13) * ((float) 0.707106781); /* c4 */
-    dataptr[8*2] = tmp13 + z1; /* phase 5 */
-    dataptr[8*6] = tmp13 - z1;
+        z1 = (tmp12 + tmp13) * ((float) 0.707106781); /* c4 */
+        dataptr[8*2] = tmp13 + z1; /* phase 5 */
+        dataptr[8*6] = tmp13 - z1;
 
-    /* Odd part */
+        /* Odd part */
 
-    tmp10 = tmp4 + tmp5;    /* phase 2 */
-    tmp11 = tmp5 + tmp6;
-    tmp12 = tmp6 + tmp7;
+        tmp10 = tmp4 + tmp5;    /* phase 2 */
+        tmp11 = tmp5 + tmp6;
+        tmp12 = tmp6 + tmp7;
 
-    /* The rotator is modified from fig 4-8 to avoid extra negations. */
-    z5 = (tmp10 - tmp12) * ((float) 0.382683433); /* c6 */
-    z2 = ((float) 0.541196100) * tmp10 + z5; /* c2-c6 */
-    z4 = ((float) 1.306562965) * tmp12 + z5; /* c2+c6 */
-    z3 = tmp11 * ((float) 0.707106781); /* c4 */
+        /* The rotator is modified from fig 4-8 to avoid extra negations. */
+        z5 = (tmp10 - tmp12) * ((float) 0.382683433); /* c6 */
+        z2 = ((float) 0.541196100) * tmp10 + z5; /* c2-c6 */
+        z4 = ((float) 1.306562965) * tmp12 + z5; /* c2+c6 */
+        z3 = tmp11 * ((float) 0.707106781); /* c4 */
 
-    z11 = tmp7 + z3;        /* phase 5 */
-    z13 = tmp7 - z3;
+        z11 = tmp7 + z3;        /* phase 5 */
+        z13 = tmp7 - z3;
 
-    dataptr[8*5] = z13 + z2; /* phase 6 */
-    dataptr[8*3] = z13 - z2;
-    dataptr[8*1] = z11 + z4;
-    dataptr[8*7] = z11 - z4;
+        dataptr[8*5] = z13 + z2; /* phase 6 */
+        dataptr[8*3] = z13 - z2;
+        dataptr[8*1] = z11 + z4;
+        dataptr[8*7] = z11 - z4;
 
-    dataptr++;          /* advance pointer to next column */
-  }
+        dataptr++;          /* advance pointer to next column */
+    }
+}
+
+float slow_fdct(int u, int v, float* data)
+{
+    float res = 0.0f;
+    float cu = (u == 0) ? 0.70710678118654f : 1;
+    float cv = (v == 0) ? 0.70710678118654f : 1;
+    const int base_index =
+        v * 8 * 8 * 8 +
+        u * 8 * 8;
+    for (int y = 0; y < 8; ++y)
+    {
+        for (int x = 0; x < 8; ++x)
+        {
+            int index = base_index + y * 8 + x;
+            res +=
+                (data[y * 8 + x]) *
+                //cosine_table[u * 8 + x] * cosine_table[v * 8 + y];
+                cosf(((2.0f * x + 1.0f) * u * kPi) / 16.0f) *
+                cosf(((2.0f * y + 1.0f) * v * kPi) / 16.0f);
+        }
+    }
+    res *= 0.25f * cu * cv;
+    return res;
 }
 
 static void tjei_encode_and_write_DU(
         TJEArena* buffer,
         float* mcu,
+#if TJE_USE_FAST_DCT
         float* qt,  // Pre-processed quantization matrix.
+#else
+        uint8_t* qt,
+#endif
         uint64_t* mse,  // Maximum square error (can be NULL).
         uint8_t* huff_dc_len, uint16_t* huff_dc_code,  // Huffman tables
         uint8_t* huff_ac_len, uint16_t* huff_ac_code,
@@ -811,26 +868,56 @@ static void tjei_encode_and_write_DU(
         uint32_t* location)
 {
     int result = TJE_OK;
-    int8_t du[64];  // Data unit in zig-zag order
+    int du[64];  // Data unit in zig-zag order
 
     float dct_mcu[64];
     memcpy(dct_mcu, mcu, 64 * sizeof(float));
-    fdct(dct_mcu);
 
+#if TJE_USE_FAST_DCT
+    fdct(dct_mcu);
     for (int i = 0; i < 64; ++i)
     {
         float fval = dct_mcu[i] / 8.0f;
         fval *= qt[i];
         //int8_t val = (int8_t)(roundf(fval));
-        //int8_t val = (int8_t)((fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f));
+        fval = (fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f);
         //int8_t val = (int8_t)fval;
         // Better way: Save a whole lot of branching.
+        /* { */
+        /*     fval += 1024; */
+        /*     fval = floorf(fval + 0.5f); */
+        /*     fval -= 1024; */
+        /* } */
+        int val = (int)fval;
+        du[tjei_zig_zag_indices[i]] = val;
+        if (mse)
         {
-            fval += 128;
-            fval = floorf(fval + 0.5f);
-            fval -= 128;
+            float reconstructed = ((float)val) / qt[i];
+            float diff = reconstructed - dct_mcu[i];
+            *mse += (uint64_t)(diff * diff);
         }
-        int8_t val = (int8_t)fval;
+    }
+#else
+    for (int v = 0; v < 8; ++v)
+    {
+        for (int u = 0; u < 8; ++u)
+        {
+            dct_mcu[v * 8 + u] = slow_fdct(u, v, mcu);
+        }
+    }
+    for (int i = 0; i < 64; ++i)
+    {
+        float fval = dct_mcu[i] / (qt[i]);
+        //int8_t val = (int8_t)(roundf(fval));
+        int val = (int)((fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f));
+        //int8_t val = (int8_t)fval;
+        // Better way: Save a whole lot of branching.
+        /* { */
+        /*     fval += 128; */
+        /*     fval = floorf(fval + 0.5f); */
+        /*     fval -= 128; */
+        /* } */
+        /* int8_t val = (int8_t)fval; */
         du[tjei_zig_zag_indices[i]] = val;
         if (mse)
         {
@@ -839,23 +926,24 @@ static void tjei_encode_and_write_DU(
             *mse += (uint64_t)(diff * diff);
         }
     }
+#endif
 
-    uint16_t bits[2];
+    uint16_t vli[2];
 
     // Encode DC coefficient.
     int diff = du[0] - *pred;
     *pred = du[0];
     if (diff != 0)
     {
-        tjei_calculate_variable_length_int(diff, bits);
-        // (SIZE)
+        tjei_calculate_variable_length_int(diff, vli);
+        // Write number of bits with Huffman coding
         result = tjei_write_bits(buffer,
                                  bitbuffer, location,
-                                 huff_dc_len[bits[1]], huff_dc_code[bits[1]]);
-        // (AMPLITUDE)
+                                 huff_dc_len[vli[1]], huff_dc_code[vli[1]]);
+        // Write the bits.
         result |= tjei_write_bits(buffer,
                                   bitbuffer, location,
-                                  bits[1], bits[0]);
+                                  vli[1], vli[0]);
     }
     else
     {
@@ -870,7 +958,7 @@ static void tjei_encode_and_write_DU(
 
     int last_non_zero_i = 0;
     // Find the last non-zero element.
-    for (int i = 63; i >= 0; --i)
+    for (int i = 63; i > 0; --i)
     {
         if (du[i] != 0)
         {
@@ -898,12 +986,12 @@ static void tjei_encode_and_write_DU(
         }
         assert(result == TJE_OK);
         {
-            tjei_calculate_variable_length_int(du[i], bits);
+            tjei_calculate_variable_length_int(du[i], vli);
 
-            assert(zero_count <= 0xf);
-            assert(bits[1] <= 10);
+            assert(zero_count < 0xf);
+            assert(vli[1] <= 10);
 
-            uint16_t sym1 = ((uint16_t)zero_count << 4) | bits[1];
+            uint16_t sym1 = ((uint16_t)zero_count << 4) | vli[1];
 
             assert(huff_ac_len[sym1] != 0);
 
@@ -914,7 +1002,7 @@ static void tjei_encode_and_write_DU(
             // Write symbol 2  --- (AMPLITUDE)
             result |= tjei_write_bits(buffer,
                                       bitbuffer, location,
-                                      bits[1], bits[0]);
+                                      vli[1], vli[0]);
         }
         assert(result == TJE_OK);
     }
@@ -1009,6 +1097,7 @@ static int tje_encode_main(
         return TJE_INVALID_NUM_COMPONENTS;
     }
 
+#if TJE_USE_FAST_DCT
     struct TJEProcessedQT pqt;
     // Again, taken from classic japanese implementation.
     //
@@ -1039,6 +1128,7 @@ static int tje_encode_main(
             }
         }
     }
+#endif
 
     // Assuming that the compression ratio will be lower than 0.5.
     state->buffer = tjei_arena_spawn(arena, tjei_arena_available_space(arena) / 2);
@@ -1152,15 +1242,9 @@ static int tje_encode_main(
 
     state->mse = 0;
 
-
-#if 0
-#define PAD_TO_8(x) (( ((x) % 8) == 0 ) ? (x) : (x) + 8 - ((x) % 8))
-    int padded_width = PAD_TO_8(real_width);
-    int padded_height = PAD_TO_8(real_height);
-    assert ((padded_width % 8) == 0);
-    assert ((padded_height % 8) == 0);
-#undef PAD_TO_8
-#endif
+    //int debug_block = 10879;
+    int debug_block = 49150;
+    int block_i = 0;
 
     for (int y = 0; y < height; y += 8)
     {
@@ -1172,49 +1256,81 @@ static int tje_encode_main(
                 for (int off_x = 0; off_x < 8; ++off_x)
                 {
                     int block_index = (off_y * 8 + off_x);
-                    if (x + off_x < width && y + off_y < height)
+
+                    int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
+
+                    if((y + off_y) >= height)
                     {
-                        int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
-                        assert(src_index < width * height * src_num_components);
-
-                        uint8_t r = src_data[src_index + 0];
-                        uint8_t g = src_data[src_index + 1];
-                        uint8_t b = src_data[src_index + 2];
-
-                        float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
-                        float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
-                        float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
-
-                        du_y[block_index] = luma;
-                        du_b[block_index] = cb;
-                        du_r[block_index] = cr;
+                        src_index -= width*(y + off_y + 1 - height) * src_num_components;
                     }
-                    else
+                    if((x + off_x) >= width)
                     {
-                        du_y[block_index] = 0.0f;
+                        src_index -= ((x + off_x) + 1 - width) * src_num_components;
+                    }
+                    assert(src_index < width * height * src_num_components);
+
+                    uint8_t r = src_data[src_index + 0];
+                    uint8_t g = src_data[src_index + 1];
+                    uint8_t b = src_data[src_index + 2];
+
+                    float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
+                    float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
+                    float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
+
+                    du_y[block_index] = luma;
+                    du_b[block_index] = cb;
+                    du_r[block_index] = cr;
+                }
+            }
+
+            if (block_i == debug_block)
+            {
+#if 1
+                for (int off_y = 0; off_y < 8; ++off_y)
+                    for (int off_x = 0; off_x < 8; ++off_x)
+                    {
+                        int block_index = (off_y * 8 + off_x);
+                        du_y[block_index] = 127.0f;
                         du_b[block_index] = 0.0f;
                         du_r[block_index] = 0.0f;
                     }
-                }
+#endif
+                int foo = 0;
+
             }
 
             // Process block:
             uint64_t block_mse = 0;  // Calculating only for luma right now.
             tjei_encode_and_write_DU(&state->buffer,
-                                     du_y, pqt.luma,
+                                     du_y,
+#if TJE_USE_FAST_DCT
+                                     pqt.luma,
+#else
+                                     state->qt_luma,
+#endif
                                      /* du_y, state->qt_luma, */
                                      &block_mse,
                                      state->ehuffsize[LUMA_DC], state->ehuffcode[LUMA_DC],
                                      state->ehuffsize[LUMA_AC], state->ehuffcode[LUMA_AC],
                                      &pred_y, &bitbuffer, &location);
             tjei_encode_and_write_DU(&state->buffer,
-                                     du_b, pqt.chroma,
+                                     du_b,
+#if TJE_USE_FAST_DCT
+                                     pqt.chroma,
+#else
+                                     state->qt_chroma,
+#endif
                                      &block_mse,
                                      state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
                                      state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
                                      &pred_b, &bitbuffer, &location);
             tjei_encode_and_write_DU(&state->buffer,
-                                     du_r, pqt.chroma,
+                                     du_r,
+#if TJE_USE_FAST_DCT
+                                     pqt.chroma,
+#else
+                                     state->qt_chroma,
+#endif
                                      /* du_r, state->qt_chroma, */
                                      &block_mse,
                                      state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
@@ -1223,8 +1339,16 @@ static int tje_encode_main(
 
 
             state->mse += (float)block_mse / (float)(width * height);
+            ++block_i;
         }
     }
+
+    char* buffer[1024];
+    char* b = (char*)buffer;
+    sprintf(b, "Total number of blocks: %d\n", block_i);
+    tje_log(b);
+    sprintf(b, "MSE: %f\n", state->mse);
+    tje_log(b);
 
     // Finish the image.
     {
@@ -1266,7 +1390,7 @@ int tje_encode_to_file(
     state.qt_chroma = tjei_default_qt_chroma;
 
     // width * height * 3 is probably enough memory for the image + various structures.
-    size_t heap_size = width * height * 3 + 1024 * 1024;
+    size_t heap_size = width * height * 3 + 1024 * 1024 * 1024;
     void* big_chunk_of_memory = tje_malloc(heap_size);
 
     assert(big_chunk_of_memory);

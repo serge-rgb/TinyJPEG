@@ -12,6 +12,9 @@
  *
  * It is written in C99. And depends on the C standard library.
  *
+ * Other requirements
+ *  - Compiler with `#pragma pack` directive.
+ *  - Assumes little endian machine.
  *
  * Tested on:
  *  Linux x64 (clang)
@@ -305,19 +308,6 @@ static uint8_t tjei_default_qt_chroma_from_paper[] =
    103, 55, 56, 62, 77, 92, 101, 99,
 };
 
-#if 0
-static uint8_t tjei_default_qt_highest[] =
-{
-    8,8,8,8,8,8,8,8,
-    8,8,8,8,8,8,8,8,
-    8,8,8,8,8,8,8,8,
-    8,8,8,8,8,8,8,8,
-    8,8,8,8,8,8,8,8,
-    8,8,8,8,8,8,8,8,
-    8,8,8,8,8,8,8,8,
-    8,8,8,8,8,8,8,8,
-};
-#else
 static uint8_t tjei_default_qt_highest[] =
 {
     1,1,1,1,1,1,1,1,
@@ -329,16 +319,9 @@ static uint8_t tjei_default_qt_highest[] =
     1,1,1,1,1,1,1,1,
     1,1,1,1,1,1,1,1,
 };
-#endif
 
-#if 0
-static uint8_t* tjei_default_qt_luma   = tjei_default_qt_luma_from_spec;
-static uint8_t* tjei_default_qt_chroma   = tjei_default_qt_luma_from_spec;
-//static uint8_t* tjei_default_qt_chroma = tjei_default_qt_chroma_from_spec;
-#else
 static uint8_t* tjei_default_qt_luma   = tjei_default_qt_highest;
 static uint8_t* tjei_default_qt_chroma = tjei_default_qt_highest;
-#endif
 
 // == Procedure to 'deflate' the huffman tree: JPEG spec, C.2
 
@@ -411,10 +394,10 @@ static uint8_t tjei_default_ht_chroma_ac[] =
 // Zig-zag order:
 static uint8_t tjei_zig_zag_indices[64] =
 {
-   0,  1,  5,  6, 14, 15, 27, 28,
-   2,  4,  7, 13, 16, 26, 29, 42,
-   3,  8, 12, 17, 25, 30, 41, 43,
-   9, 11, 18, 24, 31, 40, 44, 53,
+   0,   1,  5,  6, 14, 15, 27, 28,
+   2,   4,  7, 13, 16, 26, 29, 42,
+   3,   8, 12, 17, 25, 30, 41, 43,
+   9,  11, 18, 24, 31, 40, 44, 53,
    10, 19, 23, 32, 39, 45, 52, 54,
    20, 22, 33, 38, 46, 51, 55, 60,
    21, 34, 37, 47, 50, 56, 59, 61,
@@ -495,6 +478,7 @@ typedef struct TJEScanHeader_s
     uint8_t last;  // 63
     uint8_t ah_al;  // o
 } TJEScanHeader;
+#pragma pack(pop)
 
 static int tjei_buffer_write(TJEArena* buffer, void* data, size_t num_bytes, int num_elements)
 {

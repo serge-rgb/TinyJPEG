@@ -27,6 +27,7 @@
  * TODO:
  *  - add idct and calculate MSE if param passed.
  *  - SSE2 opts.
+ *  - error messages
  *
  * This software is in the public domain. Where that dedication is not
  * recognized, you are granted a perpetual, irrevocable license to copy
@@ -140,13 +141,10 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 // ============================================================
 #ifdef TJE_IMPLEMENTATION
 
-#if !defined(tje_write) && !defined(tje_putc)
+#if !defined(tje_write)
 
 #define tje_write tjei_fwrite
-#define tje_putc tjei_putc
 
-#elif defined(tje_write) || defined(tje_putc)
-#error "You need to define either both tje_write and tje_putc or neither."
 #endif
 
 
@@ -329,7 +327,7 @@ static uint8_t tjei_default_ht_chroma_ac[] = {
 // ============================================================
 
 // Zig-zag order:
-static uint8_t tjei_zig_zag_indices[64] = {
+static uint8_t tjei_zig_zag[64] = {
    0,   1,  5,  6, 14, 15, 27, 28,
    2,   4,  7, 13, 16, 26, 29, 42,
    3,   8, 12, 17, 25, 30, 41, 43,
@@ -341,7 +339,7 @@ static uint8_t tjei_zig_zag_indices[64] = {
 };
 
 // Memory order as big endian. 0xhilo -> 0xlohi which looks as 0xhilo in memory.
-static uint16_t tjei_be_word(uint16_t le_word) {
+static uint16_t tjei_be_word(const uint16_t le_word) {
     uint8_t lo = (uint8_t)(le_word & 0x00ff);
     uint8_t hi = (uint8_t)((le_word & 0xff00) >> 8);
     return (((uint16_t)lo) << 8) | hi;
@@ -417,12 +415,8 @@ static void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t nu
     fwrite(data, num_bytes, num_elements, state->fd);
 }
 
-static void tjei_putc(TJEState* state, char c)
+static void tjei_write_DQT(TJEState* state, uint8_t* matrix, uint8_t id)
 {
-    putc(c, state->fd);
-}
-
-static void tjei_write_DQT(TJEState* state, uint8_t* matrix, uint8_t id) {
     int16_t DQT = tjei_be_word(0xffdb);
     tje_write(state, &DQT, sizeof(int16_t), 1);
     int16_t len = tjei_be_word(0x0043); // 2(len) + 1(id) + 64(matrix) = 67 = 0x43
@@ -557,11 +551,9 @@ static void tjei_write_bits(TJEState* state,
         // Grab the most significant byte.
         uint8_t c = (uint8_t)((*bitbuffer) >> 24);
         // Write it to file.
-        //tje_putc(state, c);
         tje_write(state, &c, 1, 1);
         if ( c == 0xff )  {
             // Special case: tell JPEG this is not a marker.
-            //tje_putc(state, 0);
             char z = 0;
             tje_write(state, &z, 1, 1);
         }
@@ -735,7 +727,7 @@ static void tjei_encode_and_write_DU(TJEState* state,
         fval *= qt[i];
         fval = (fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f);
         int val = (int)fval;
-        du[tjei_zig_zag_indices[i]] = val;
+        du[tjei_zig_zag[i]] = val;
         if (mse)
         {
             float reconstructed = ((float)val) / qt[i];
@@ -752,9 +744,8 @@ static void tjei_encode_and_write_DU(TJEState* state,
     for ( int i = 0; i < 64; ++i ) {
         float fval = dct_mcu[i] / (qt[i]);
         int val = (int)((fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f));
-        du[tjei_zig_zag_indices[i]] = val;
-        if (mse)
-        {
+        du[tjei_zig_zag[i]] = val;
+        if (mse) {
             float reconstructed = ((float)val) * qt[i];
             float diff = reconstructed - dct_mcu[i];
             *mse += (uint64_t)(diff * diff);
@@ -865,22 +856,20 @@ static void tjei_huff_expand (TJEState* state)
     }
 
     // Fill out the extended tables..
-    {
-        uint8_t huffsize[4][257];
-        uint16_t huffcode[4][256];
-        for ( int i = 0; i < 4; ++i ) {
-            assert (256 >= spec_tables_len[i]);
-            tjei_huff_get_code_lengths(huffsize[i], state->ht_bits[i], spec_tables_len[i]);
-            tjei_huff_get_codes(huffcode[i], huffsize[i], spec_tables_len[i]);
-        }
-        for ( int i = 0; i < 4; ++i ) {
-            int64_t count = spec_tables_len[i];
-            tjei_huff_get_extended(state->ehuffsize[i],
-                                   state->ehuffcode[i],
-                                   state->ht_vals[i],
-                                   &huffsize[i][0],
-                                   &huffcode[i][0], count);
-        }
+    uint8_t huffsize[4][257];
+    uint16_t huffcode[4][256];
+    for ( int i = 0; i < 4; ++i ) {
+        assert (256 >= spec_tables_len[i]);
+        tjei_huff_get_code_lengths(huffsize[i], state->ht_bits[i], spec_tables_len[i]);
+        tjei_huff_get_codes(huffcode[i], huffsize[i], spec_tables_len[i]);
+    }
+    for ( int i = 0; i < 4; ++i ) {
+        int64_t count = spec_tables_len[i];
+        tjei_huff_get_extended(state->ehuffsize[i],
+                               state->ehuffcode[i],
+                               state->ht_vals[i],
+                               &huffsize[i][0],
+                               &huffcode[i][0], count);
     }
 }
 
@@ -896,6 +885,10 @@ static int tjei_encode_main(
         return 0;
     }
 
+    if (width > 0xffff || height > 0xffff) {
+        return 0;
+    }
+
 #if TJE_USE_FAST_DCT
     struct TJEProcessedQT pqt;
     // Again, taken from classic japanese implementation.
@@ -908,26 +901,21 @@ static int tjei_encode_main(
      * What's actually stored is 1/divisor so that the inner loop can
      * use a multiplication rather than a division.
      */
-    static const float aanscalefactor[] =
-    {
+    static const float aan_scales[] = {
         1.0f, 1.387039845f, 1.306562965f, 1.175875602f,
         1.0f, 0.785694958f, 0.541196100f, 0.275899379f
     };
 
     // build (de)quantization tables
+    for(int y=0; y<8; y++)
     {
-        for(int y=0; y<8; y++)
+        for(int x=0; x<8; x++)
         {
-            for(int x=0; x<8; x++)
-            {
-                int i = y*8 + x;
-                pqt.luma[y*8+x] =
-                        1.0f / (aanscalefactor[x] * aanscalefactor[y] *
-                                state->qt_luma[tjei_zig_zag_indices[i]]);
-                pqt.chroma[y*8+x] =
-                        1.0f / (aanscalefactor[x] * aanscalefactor[y] *
-                                state->qt_chroma[tjei_zig_zag_indices[i]]);
-            }
+            int i = y*8 + x;
+            pqt.luma[y*8+x] =
+                    1.0f / (aan_scales[x] * aan_scales[y] * state->qt_luma[tjei_zig_zag[i]]);
+            pqt.chroma[y*8+x] =
+                    1.0f / (aan_scales[x] * aan_scales[y] * state->qt_chroma[tjei_zig_zag[i]]);
         }
     }
 #endif
@@ -968,14 +956,12 @@ static int tjei_encode_main(
         header.width = tjei_be_word((uint16_t)width);
         header.height = tjei_be_word((uint16_t)height);
         header.num_components = 3;
-        uint8_t tables[3] =
-        {
+        uint8_t tables[3] = {
             0,  // Luma component gets luma table (see tjei_write_DQT call above.)
             1,  // Chroma component gets chroma table
             1,  // Chroma component gets chroma table
         };
-        for (int i = 0; i < 3; ++i)
-        {
+        for (int i = 0; i < 3; ++i) {
             TJEComponentSpec spec;
             spec.component_id = (uint8_t)(i + 1);  // No particular reason. Just 1, 2, 3.
             spec.sampling_factors = (uint8_t)0x11;
@@ -999,8 +985,7 @@ static int tjei_encode_main(
         header.len = tjei_be_word((uint16_t)(6 + (2 * 3)));
         header.num_components = 3;
 
-        uint8_t tables[3] =
-        {
+        uint8_t tables[3] = {
             0x00,
             0x11,
             0x11,
@@ -1128,28 +1113,8 @@ int tje_encode_to_file(const char* dest_path,
                        const int num_components,
                        const unsigned char* src_data)
 {
-    FILE* fd = fopen(dest_path, "wb");
-    if (!fd) {
-        tje_log("Could not open file for writing.");
-        return 0;
-    }
-
-    TJEState state = { 0 };
-
-    state.fd = fd;
-
-    for (int i = 0; i < 64; ++ i) {
-        state.qt_luma  [i] = 1;
-        state.qt_chroma[i] = 1;
-    }
-
-    tjei_huff_expand(&state);
-
-    int result = tjei_encode_main(&state, src_data, width, height, num_components, NULL);
-
-    result |= 0 == fclose(fd);
-
-    return result;
+    int res = tje_encode_to_file_at_quality(dest_path, 3, width, height, num_components, src_data);
+    return res;
 }
 
 // Define public interface.

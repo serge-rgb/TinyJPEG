@@ -26,7 +26,6 @@
  *
  * TODO:
  *  - add idct and calculate MSE if param passed.
- *  - quality params.
  *  - SSE2 opts.
  *
  * This software is in the public domain. Where that dedication is not
@@ -87,11 +86,13 @@ extern "C"
 #endif
 
 
-// ============================================================
+// ============================================================9
 // Public interface:
 // ============================================================
 
 
+// - tje_encode_to_file -
+//
 // Usage:
 //  Takes bitmap data and writes a JPEG-encoded image to disk.
 //
@@ -110,6 +111,29 @@ int tje_encode_to_file(const char* dest_path,
                        const int num_components,
                        const unsigned char* src_data);
 
+// - tje_encode_to_file_at_quality -
+//
+// Usage:
+//  Takes bitmap data and writes a JPEG-encoded image to disk.
+//
+//  PARAMETERS
+//      dest_path:          filename to which we will write. e.g. "out.jpg"
+//      quality:            3: Highest. Compression varies wildly (between 1/3 and 1/20).
+//                          2: Very good quality. About 1/2 the size of 3.
+//                          1: Noticeable. About 1/6 the size of 3, or 1/3 the size of 2.
+//      width, height:      image size in pixels
+//      num_components:     3 is RGB. 4 is RGBA. Those are the only supported values
+//      src_data:           pointer to the pixel data.
+//
+//  RETURN:
+//      0 on error. 1 on success.
+
+int tje_encode_to_file_at_quality(const char* dest_path,
+                                  const int quality,
+                                  const int width,
+                                  const int height,
+                                  const int num_components,
+                                  const unsigned char* src_data);
 
 // ============================================================
 // Internal
@@ -186,8 +210,8 @@ typedef struct TJEState_s {
     uint8_t*    ht_bits[4];
     uint8_t*    ht_vals[4];
 
-    uint8_t*    qt_luma;
-    uint8_t*    qt_chroma;
+    uint8_t     qt_luma[64];
+    uint8_t     qt_chroma[64];
 
     FILE*       fd;
     // Optional. Will not be used by default usage code.
@@ -234,29 +258,15 @@ static uint8_t tjei_default_qt_chroma_from_spec[] = {
 
 static uint8_t tjei_default_qt_chroma_from_paper[] = {
     // Example QT from JPEG paper
-   16,  12, 14, 14, 18, 24, 49, 72,
-   11,  10, 16, 24, 40, 51, 61, 12,
-   13,  17, 22, 35, 64, 92, 14, 16,
-   22,  37, 55, 78, 95, 19, 24, 29,
-   56,  64, 87, 98, 26, 40, 51, 68,
-   81, 103, 112, 58, 57, 87, 109, 104,
-   121,100, 60, 69, 80, 103, 113, 120,
-   103, 55, 56, 62, 77, 92, 101, 99,
+   16,  12, 14,  14, 18, 24,  49,  72,
+   11,  10, 16,  24, 40, 51,  61,  12,
+   13,  17, 22,  35, 64, 92,  14,  16,
+   22,  37, 55,  78, 95, 19,  24,  29,
+   56,  64, 87,  98, 26, 40,  51,  68,
+   81, 103, 112, 58, 57, 87,  109, 104,
+   121,100, 60,  69, 80, 103, 113, 120,
+   103, 55, 56,  62, 77, 92,  101, 99,
 };
-
-static uint8_t tjei_default_qt_highest[] = {
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,
-};
-
-static uint8_t* tjei_default_qt_luma   = tjei_default_qt_highest;
-static uint8_t* tjei_default_qt_chroma = tjei_default_qt_highest;
 
 // == Procedure to 'deflate' the huffman tree: JPEG spec, C.2
 
@@ -910,10 +920,13 @@ static int tjei_encode_main(
         {
             for(int x=0; x<8; x++)
             {
+                int i = y*8 + x;
                 pqt.luma[y*8+x] =
-                        1.0f / (aanscalefactor[x] * aanscalefactor[y] * state->qt_luma[y*8 + x]);
+                        1.0f / (aanscalefactor[x] * aanscalefactor[y] *
+                                state->qt_luma[tjei_zig_zag_indices[i]]);
                 pqt.chroma[y*8+x] =
-                        1.0f / (aanscalefactor[x] * aanscalefactor[y] * state->qt_chroma[y*8 + x]);
+                        1.0f / (aanscalefactor[x] * aanscalefactor[y] *
+                                state->qt_chroma[tjei_zig_zag_indices[i]]);
             }
         }
     }
@@ -1109,13 +1122,11 @@ static int tjei_encode_main(
     return 1;
 }
 
-// Define public interface.
-int tje_encode_to_file(
-        const char* dest_path,
-        const int width,
-        const int height,
-        const int num_components,
-        const unsigned char* src_data)
+int tje_encode_to_file(const char* dest_path,
+                       const int width,
+                       const int height,
+                       const int num_components,
+                       const unsigned char* src_data)
 {
     FILE* fd = fopen(dest_path, "wb");
     if (!fd) {
@@ -1126,8 +1137,72 @@ int tje_encode_to_file(
     TJEState state = { 0 };
 
     state.fd = fd;
-    state.qt_luma   = tjei_default_qt_luma;
-    state.qt_chroma = tjei_default_qt_chroma;
+
+    for (int i = 0; i < 64; ++ i) {
+        state.qt_luma  [i] = 1;
+        state.qt_chroma[i] = 1;
+    }
+
+    tjei_huff_expand(&state);
+
+    int result = tjei_encode_main(&state, src_data, width, height, num_components, NULL);
+
+    result |= 0 == fclose(fd);
+
+    return result;
+}
+
+// Define public interface.
+int tje_encode_to_file_at_quality(const char* dest_path,
+                                  const int quality,
+                                  const int width,
+                                  const int height,
+                                  const int num_components,
+                                  const unsigned char* src_data)
+{
+    FILE* fd = fopen(dest_path, "wb");
+    if (!fd) {
+        tje_log("Could not open file for writing.");
+        return 0;
+    }
+
+    if (quality < 0 || quality > 3) {
+        tje_log("[ERROR] -- Valid 'quality' values are 1 (lowest), 2, or 3 (highest)\n");
+        return 0;
+    }
+
+    TJEState state = { 0 };
+
+    state.fd = fd;
+
+    int qt_factor = 1;
+    switch(quality) {
+    case 3:
+        for (int i = 0; i < 64; ++ i) {
+            state.qt_luma[i]   = 1;
+            state.qt_chroma[i] = 1;
+        }
+        break;
+    case 2:
+        qt_factor = 10;
+        // don't break. fall through.
+    case 1:
+        for ( int i = 0; i < 64; ++i ) {
+            state.qt_luma[i]   = tjei_default_qt_luma_from_spec[i] / qt_factor;
+            if (state.qt_luma[i] == 0) {
+                state.qt_luma[i] = 1;
+            }
+            state.qt_chroma[i] = tjei_default_qt_chroma_from_paper[i] / qt_factor;
+            if (state.qt_chroma[i] == 0) {
+                state.qt_chroma[i] = 1;
+            }
+        }
+        break;
+    default:
+        assert(!"invalid code path");
+        break;
+    }
+
 
     tjei_huff_expand(&state);
 

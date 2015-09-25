@@ -15,7 +15,6 @@
  *
  * It is written in C99. And depends on the C standard library.
  *
- * Fr
  * Other requirements
  *  - Assumes little endian machine.
  *
@@ -25,6 +24,7 @@
  *  OSX
  *
  * TODO:
+ *  - buffer writes
  *  - add idct and calculate MSE if param passed.
  *  - SSE2 opts.
  *  - error messages

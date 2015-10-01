@@ -24,7 +24,6 @@
  *  OSX
  *
  * TODO:
- *  - buffer writes
  *  - add idct and calculate MSE if param passed.
  *  - SSE2 opts.
  *  - error messages
@@ -141,13 +140,6 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 // ============================================================
 #ifdef TJE_IMPLEMENTATION
 
-#if !defined(tje_write)
-
-#define tje_write tjei_fwrite
-
-#endif
-
-
 // Only use zero for debugging and/or inspection.
 #define TJE_USE_FAST_DCT 1
 
@@ -175,6 +167,18 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 #include <malloc/malloc.h>
 #endif
 #define tje_free(x) free((x)); x = 0;
+#endif
+
+
+#if !defined(tje_write)
+
+#define TJEI_BUFFER_SIZE 128  // 128 gets most of the win of using a buffer (eg. 256 has no measurable difference)
+#define tje_write tjei_fwrite
+
+// Buffer TJE_BUFFER_SIZE in memory and flush when ready
+static size_t tjei_g_output_buffer_count;
+static uint8_t tjei_g_output_buffer[TJEI_BUFFER_SIZE];
+
 #endif
 
 
@@ -410,9 +414,30 @@ typedef struct TJEScanHeader_s {
 } TJEScanHeader;
 #pragma pack(pop)
 
+
 static void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t num_elements)
 {
-    fwrite(data, num_bytes, num_elements, state->fd);
+    size_t to_write = num_bytes * num_elements;
+
+    // Cap to the buffer available size and copy memory.
+    size_t capped_count = min(to_write, TJEI_BUFFER_SIZE - 1 - tjei_g_output_buffer_count);
+
+    memcpy(tjei_g_output_buffer + tjei_g_output_buffer_count, data, capped_count);
+    tjei_g_output_buffer_count += capped_count;
+
+    assert (tjei_g_output_buffer_count <= TJEI_BUFFER_SIZE - 1);
+
+    // Flush the buffer.
+    if ( tjei_g_output_buffer_count == TJEI_BUFFER_SIZE - 1 ) {
+        //fwrite(data, num_bytes, num_elements, state->fd);
+        fwrite(tjei_g_output_buffer, tjei_g_output_buffer_count, 1, state->fd);
+        tjei_g_output_buffer_count = 0;
+    }
+
+    // Recursively calling ourselves with the rest of the buffer.
+    if (capped_count < to_write) {
+        tjei_fwrite(state, (uint8_t*)data+capped_count, to_write - capped_count, 1);
+    }
 }
 
 static void tjei_write_DQT(TJEState* state, uint8_t* matrix, uint8_t id)
@@ -1055,9 +1080,6 @@ static int tjei_encode_main(
                 }
             }
 
-            // Process block:
-            uint64_t block_mse = 0;  // Calculating only for luma right now.
-
             tjei_encode_and_write_DU(state, du_y,
 #if TJE_USE_FAST_DCT
                                      pqt.luma,
@@ -1065,7 +1087,7 @@ static int tjei_encode_main(
                                      state->qt_luma,
 #endif
                                      /* du_y, state->qt_luma, */
-                                     &block_mse,
+                                     NULL,
                                      state->ehuffsize[LUMA_DC], state->ehuffcode[LUMA_DC],
                                      state->ehuffsize[LUMA_AC], state->ehuffcode[LUMA_AC],
                                      &pred_y, &bitbuffer, &location);
@@ -1075,7 +1097,7 @@ static int tjei_encode_main(
 #else
                                      state->qt_chroma,
 #endif
-                                     &block_mse,
+                                     NULL,
                                      state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
                                      state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
                                      &pred_b, &bitbuffer, &location);
@@ -1086,13 +1108,13 @@ static int tjei_encode_main(
                                      state->qt_chroma,
 #endif
                                      /* du_r, state->qt_chroma, */
-                                     &block_mse,
+                                     NULL,
                                      state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
                                      state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
                                      &pred_r, &bitbuffer, &location);
 
 
-            state->mse += (float)block_mse / (float)(width * height);
+            //state->mse += (float)block_mse / (float)(width * height);
         }
     }
 
@@ -1103,6 +1125,13 @@ static int tjei_encode_main(
     }
     uint16_t EOI = tjei_be_word(0xffd9);
     tje_write(state, &EOI, sizeof(uint16_t), 1);
+
+    // If compiled with buffered IO
+#if defined(TJEI_BUFFER_SIZE)
+    if (tjei_g_output_buffer_count) {
+        fwrite(tjei_g_output_buffer, tjei_g_output_buffer_count, 1, state->fd);
+    }
+#endif
 
     return 1;
 }

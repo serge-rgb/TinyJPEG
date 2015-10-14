@@ -1169,7 +1169,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 
     state.fd = fd;
 
-    int qt_factor = 1;
+    uint8_t qt_factor = 1;
     switch(quality) {
     case 3:
         for (int i = 0; i < 64; ++ i) {

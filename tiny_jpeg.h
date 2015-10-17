@@ -24,7 +24,6 @@
  *  OSX
  *
  * TODO:
- *  - SSE2 opts.
  *  - error messages
  *
  * This software is in the public domain. Where that dedication is not
@@ -139,6 +138,14 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 // ============================================================
 #ifdef TJE_IMPLEMENTATION
 
+
+#if defined(_MSC_VER)
+#define TJEI_FORCE_INLINE __forceinline
+// #define TJEI_FORCE_INLINE __declspec(noinline)  // For profiling
+#else
+#define TJEI_FORCE_INLINE static // TODO: equivalent for gcc & clang
+#endif
+
 // Only use zero for debugging and/or inspection.
 #define TJE_USE_FAST_DCT 1
 
@@ -171,7 +178,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 
 #if !defined(tje_write)
 
-#define TJEI_BUFFER_SIZE 128  // 128 gets most of the win of using a buffer (eg. 256 has no measurable difference)
+#define TJEI_BUFFER_SIZE 1024
 #define tje_write tjei_fwrite
 
 // Buffer TJE_BUFFER_SIZE in memory and flush when ready
@@ -413,7 +420,7 @@ typedef struct TJEScanHeader_s {
 #pragma pack(pop)
 
 
-static void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t num_elements)
+void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t num_elements)
 {
     size_t to_write = num_bytes * num_elements;
 
@@ -485,10 +492,8 @@ static void tjei_write_DHT(TJEState* state,
 // ============================================================
 
 // Returns all code sizes from the BITS specification (JPEG C.3)
-static uint8_t* tjei_huff_get_code_lengths(uint8_t huffsize[/*256*/],
-                                           uint8_t* bits, int32_t num_codes)
+static uint8_t* tjei_huff_get_code_lengths(uint8_t huffsize[/*256*/], uint8_t* bits)
 {
-
     int k = 0;
     for ( int i = 0; i < 16; ++i ) {
         for ( int j = 0; j < bits[i]; ++j ) {
@@ -505,8 +510,7 @@ static uint16_t* tjei_huff_get_codes(uint16_t codes[], uint8_t* huffsize, int64_
     uint16_t code = 0;
     int k = 0;
     uint8_t sz = huffsize[0];
-    for(;;)
-    {
+    for(;;) {
         do {
             assert(k < count);
             codes[k++] = code++;
@@ -540,7 +544,7 @@ static void tjei_huff_get_extended(uint8_t* out_ehuffsize,
 // Returns:
 //  out[1] : number of bits
 //  out[0] : bits
-static void tjei_calculate_variable_length_int(int value, uint16_t out[2])
+TJEI_FORCE_INLINE void tjei_calculate_variable_length_int(int value, uint16_t out[2])
 {
     int abs_val = value;
     if ( value < 0 ) {
@@ -555,9 +559,9 @@ static void tjei_calculate_variable_length_int(int value, uint16_t out[2])
 }
 
 // Write bits to file.
-static void tjei_write_bits(TJEState* state,
-                            uint32_t* bitbuffer, uint32_t* location,
-                            uint16_t num_bits, uint16_t bits)
+TJEI_FORCE_INLINE void tjei_write_bits(TJEState* state,
+                                       uint32_t* bitbuffer, uint32_t* location,
+                                       uint16_t num_bits, uint16_t bits)
 {
     //   v-- location
     //  [                     ]   <-- bit buffer
@@ -568,8 +572,9 @@ static void tjei_write_bits(TJEState* state,
     // When we can write a full byte, we write a byte and shift.
 
     // Push the stack.
-    *location += num_bits;
-    *bitbuffer |= (bits << (32 - *location));
+    uint32_t nloc = *location + num_bits;
+    *bitbuffer |= (bits << (32 - nloc));
+    *location = nloc;
     while ( *location >= 8 ) {
         // Grab the most significant byte.
         uint8_t c = (uint8_t)((*bitbuffer) >> 24);
@@ -711,10 +716,8 @@ float slow_fdct(int u, int v, float* data)
     float res = 0.0f;
     float cu = (u == 0) ? 0.70710678118654f : 1;
     float cv = (v == 0) ? 0.70710678118654f : 1;
-    const int base_index = v * 8 * 8 * 8 + u * 8 * 8;
     for ( int y = 0; y < 8; ++y ) {
         for ( int x = 0; x < 8; ++x ) {
-            int index = base_index + y * 8 + x;
             res += (data[y * 8 + x]) *
                     cosf(((2.0f * x + 1.0f) * u * kPi) / 16.0f) *
                     cosf(((2.0f * y + 1.0f) * v * kPi) / 16.0f);
@@ -723,6 +726,8 @@ float slow_fdct(int u, int v, float* data)
     res *= 0.25f * cu * cv;
     return res;
 }
+
+#define ABS(x) ((x) < 0 ? -(x) : (x))
 
 static void tjei_encode_and_write_DU(TJEState* state,
                                      float* mcu,
@@ -745,9 +750,14 @@ static void tjei_encode_and_write_DU(TJEState* state,
 #if TJE_USE_FAST_DCT
     fdct(dct_mcu);
     for ( int i = 0; i < 64; ++i ) {
-        float fval = dct_mcu[i] / 8.0f;
+        float fval = dct_mcu[i];
         fval *= qt[i];
+#if 0
         fval = (fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f);
+#else
+        fval = floorf(fval + 1024 + 0.5f);
+        fval -= 1024;
+#endif
         int val = (int)fval;
         du[tjei_zig_zag[i]] = val;
     }
@@ -807,9 +817,6 @@ static void tjei_encode_and_write_DU(TJEState* state,
 
         assert(zero_count < 0x10);
         assert(vli[1] <= 10);
-        if (zero_count >= 0x10) {
-            int ok = 1;
-        }
 
         uint16_t sym1 = ((uint16_t)zero_count << 4) | vli[1];
 
@@ -871,7 +878,7 @@ static void tjei_huff_expand (TJEState* state)
     uint16_t huffcode[4][256];
     for ( int i = 0; i < 4; ++i ) {
         assert (256 >= spec_tables_len[i]);
-        tjei_huff_get_code_lengths(huffsize[i], state->ht_bits[i], spec_tables_len[i]);
+        tjei_huff_get_code_lengths(huffsize[i], state->ht_bits[i]);
         tjei_huff_get_codes(huffcode[i], huffsize[i], spec_tables_len[i]);
     }
     for ( int i = 0; i < 4; ++i ) {
@@ -919,8 +926,8 @@ static int tjei_encode_main(TJEState* state,
     for(int y=0; y<8; y++) {
         for(int x=0; x<8; x++) {
             int i = y*8 + x;
-            pqt.luma[y*8+x] = 1.0f / (aan_scales[x] * aan_scales[y] * state->qt_luma[tjei_zig_zag[i]]);
-            pqt.chroma[y*8+x] = 1.0f / (aan_scales[x] * aan_scales[y] * state->qt_chroma[tjei_zig_zag[i]]);
+            pqt.luma[y*8+x] = 1.0f / (8 * aan_scales[x] * aan_scales[y] * state->qt_luma[tjei_zig_zag[i]]);
+            pqt.chroma[y*8+x] = 1.0f / (8 * aan_scales[x] * aan_scales[y] * state->qt_chroma[tjei_zig_zag[i]]);
         }
     }
 #endif
@@ -1093,8 +1100,9 @@ static int tjei_encode_main(TJEState* state,
 
     // Finish the image.
     { // Flush
-        assert(location < 8);
-        tjei_write_bits(state, &bitbuffer, &location, (uint16_t)(8 - location), 0xff);
+        while (location != 0) {
+            tjei_write_bits(state, &bitbuffer, &location, (uint16_t)(8 - location), 0xff);
+        }
     }
     uint16_t EOI = tjei_be_word(0xffd9);
     tje_write(state, &EOI, sizeof(uint16_t), 1);

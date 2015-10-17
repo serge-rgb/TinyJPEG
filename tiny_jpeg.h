@@ -24,7 +24,6 @@
  *  OSX
  *
  * TODO:
- *  - add idct and calculate MSE if param passed.
  *  - SSE2 opts.
  *  - error messages
  *
@@ -216,8 +215,6 @@ typedef struct TJEState_s {
     uint8_t     qt_chroma[64];
 
     FILE*       fd;
-    // Optional. Will not be used by default usage code.
-    float       mse;  // Mean square error.
 } TJEState;
 
 // ============================================================
@@ -339,11 +336,12 @@ static uint8_t tjei_zig_zag[64] = {
    10, 19, 23, 32, 39, 45, 52, 54,
    20, 22, 33, 38, 46, 51, 55, 60,
    21, 34, 37, 47, 50, 56, 59, 61,
-   35, 36, 48, 49, 57, 58, 62, 63
+   35, 36, 48, 49, 57, 58, 62, 63,
 };
 
 // Memory order as big endian. 0xhilo -> 0xlohi which looks as 0xhilo in memory.
-static uint16_t tjei_be_word(const uint16_t le_word) {
+static uint16_t tjei_be_word(const uint16_t le_word)
+{
     uint8_t lo = (uint8_t)(le_word & 0x00ff);
     uint8_t hi = (uint8_t)((le_word & 0xff00) >> 8);
     return (((uint16_t)lo) << 8) | hi;
@@ -733,7 +731,6 @@ static void tjei_encode_and_write_DU(TJEState* state,
 #else
                                      uint8_t* qt,
 #endif
-                                     uint64_t* mse,  // Maximum square error (can be NULL).
                                      uint8_t* huff_dc_len, uint16_t* huff_dc_code, // Huffman tables
                                      uint8_t* huff_ac_len, uint16_t* huff_ac_code,
                                      int* pred,  // Previous DC coefficient
@@ -753,12 +750,6 @@ static void tjei_encode_and_write_DU(TJEState* state,
         fval = (fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f);
         int val = (int)fval;
         du[tjei_zig_zag[i]] = val;
-        if (mse)
-        {
-            float reconstructed = ((float)val) / qt[i];
-            float diff = reconstructed - dct_mcu[i];
-            *mse += (uint64_t)(diff * diff);
-        }
     }
 #else
     for ( int v = 0; v < 8; ++v ) {
@@ -770,11 +761,6 @@ static void tjei_encode_and_write_DU(TJEState* state,
         float fval = dct_mcu[i] / (qt[i]);
         int val = (int)((fval > 0) ? floorf(fval + 0.5f) : ceilf(fval - 0.5f));
         du[tjei_zig_zag[i]] = val;
-        if (mse) {
-            float reconstructed = ((float)val) * qt[i];
-            float diff = reconstructed - dct_mcu[i];
-            *mse += (uint64_t)(diff * diff);
-        }
     }
 #endif
 
@@ -898,13 +884,11 @@ static void tjei_huff_expand (TJEState* state)
     }
 }
 
-static int tjei_encode_main(
-        TJEState* state,
-        const unsigned char* src_data,
-        const int width,
-        const int height,
-        const int src_num_components,
-        int64_t* mse_x3)
+static int tjei_encode_main(TJEState* state,
+                            const unsigned char* src_data,
+                            const int width,
+                            const int height,
+                            const int src_num_components)
 {
     if (src_num_components != 3 && src_num_components != 4) {
         return 0;
@@ -932,15 +916,11 @@ static int tjei_encode_main(
     };
 
     // build (de)quantization tables
-    for(int y=0; y<8; y++)
-    {
-        for(int x=0; x<8; x++)
-        {
+    for(int y=0; y<8; y++) {
+        for(int x=0; x<8; x++) {
             int i = y*8 + x;
-            pqt.luma[y*8+x] =
-                    1.0f / (aan_scales[x] * aan_scales[y] * state->qt_luma[tjei_zig_zag[i]]);
-            pqt.chroma[y*8+x] =
-                    1.0f / (aan_scales[x] * aan_scales[y] * state->qt_chroma[tjei_zig_zag[i]]);
+            pqt.luma[y*8+x] = 1.0f / (aan_scales[x] * aan_scales[y] * state->qt_luma[tjei_zig_zag[i]]);
+            pqt.chroma[y*8+x] = 1.0f / (aan_scales[x] * aan_scales[y] * state->qt_chroma[tjei_zig_zag[i]]);
         }
     }
 #endif
@@ -1015,8 +995,7 @@ static int tjei_encode_main(
             0x11,
             0x11,
         };
-        for (int i = 0; i < 3; ++i)
-        {
+        for (int i = 0; i < 3; ++i) {
             TJEFrameComponentSpec cs;
             // Must be equal to component_id from frame header above.
             cs.component_id = (uint8_t)(i + 1);
@@ -1028,8 +1007,8 @@ static int tjei_encode_main(
         header.last  = 63;
         header.ah_al = 0;
         tje_write(state, &header, sizeof(TJEScanHeader), 1);
-    }
 
+    }
     // Write compressed data.
 
     float du_y[64];
@@ -1086,8 +1065,6 @@ static int tjei_encode_main(
 #else
                                      state->qt_luma,
 #endif
-                                     /* du_y, state->qt_luma, */
-                                     NULL,
                                      state->ehuffsize[LUMA_DC], state->ehuffcode[LUMA_DC],
                                      state->ehuffsize[LUMA_AC], state->ehuffcode[LUMA_AC],
                                      &pred_y, &bitbuffer, &location);
@@ -1097,7 +1074,6 @@ static int tjei_encode_main(
 #else
                                      state->qt_chroma,
 #endif
-                                     NULL,
                                      state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
                                      state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
                                      &pred_b, &bitbuffer, &location);
@@ -1107,14 +1083,11 @@ static int tjei_encode_main(
 #else
                                      state->qt_chroma,
 #endif
-                                     /* du_r, state->qt_chroma, */
-                                     NULL,
                                      state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
                                      state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
                                      &pred_r, &bitbuffer, &location);
 
 
-            //state->mse += (float)block_mse / (float)(width * height);
         }
     }
 
@@ -1160,7 +1133,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
         return 0;
     }
 
-    if (quality < 0 || quality > 3) {
+    if (quality < 1 || quality > 3) {
         tje_log("[ERROR] -- Valid 'quality' values are 1 (lowest), 2, or 3 (highest)\n");
         return 0;
     }
@@ -1200,7 +1173,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 
     tjei_huff_expand(&state);
 
-    int result = tjei_encode_main(&state, src_data, width, height, num_components, NULL);
+    int result = tjei_encode_main(&state, src_data, width, height, num_components);
 
     result |= 0 == fclose(fd);
 

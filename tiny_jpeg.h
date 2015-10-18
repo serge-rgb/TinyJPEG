@@ -363,7 +363,6 @@ static uint16_t tjei_be_word(const uint16_t le_word)
 
 static const uint8_t tjeik_jfif_id[] = "JFIF";
 static const uint8_t tjeik_com_str[] = "Created by Tiny JPEG Encoder";
-static const float kPi = 3.1415265f;
 
 // TODO: Get rid of packed structs!
 #pragma pack(push)
@@ -395,11 +394,11 @@ typedef struct TJEComponentSpec_s {
 
 typedef struct TJEFrameHeader_s {
     uint16_t         SOF;
-    uint16_t         len;                         // 8 + 3 * frame.num_components
-    uint8_t          precision;                   // Sample precision (bits per sample).
-    uint16_t         height;                      // aka. number of lines.
-    uint16_t         width;                       // aka. number of samples per line.
-    uint8_t          num_components;              // For this implementation, will be equal to 3.
+    uint16_t         len;                   // 8 + 3 * frame.num_components
+    uint8_t          precision;             // Sample precision (bits per sample).
+    uint16_t         height;
+    uint16_t         width;
+    uint8_t          num_components;        // For this implementation, will be equal to 3.
     TJEComponentSpec component_spec[3];
 } TJEFrameHeader;
 
@@ -713,18 +712,20 @@ void fdct (float * data)
 
 float slow_fdct(int u, int v, float* data)
 {
+#define kPI 3.14159265f
     float res = 0.0f;
     float cu = (u == 0) ? 0.70710678118654f : 1;
     float cv = (v == 0) ? 0.70710678118654f : 1;
     for ( int y = 0; y < 8; ++y ) {
         for ( int x = 0; x < 8; ++x ) {
             res += (data[y * 8 + x]) *
-                    cosf(((2.0f * x + 1.0f) * u * kPi) / 16.0f) *
-                    cosf(((2.0f * y + 1.0f) * v * kPi) / 16.0f);
+                    cosf(((2.0f * x + 1.0f) * u * kPI) / 16.0f) *
+                    cosf(((2.0f * y + 1.0f) * v * kPI) / 16.0f);
         }
     }
     res *= 0.25f * cu * cv;
     return res;
+#undef kPI
 }
 
 #define ABS(x) ((x) < 0 ? -(x) : (x))

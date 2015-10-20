@@ -730,7 +730,7 @@ float slow_fdct(int u, int v, float* data)
 
 #define ABS(x) ((x) < 0 ? -(x) : (x))
 
-static void tjei_encode_and_write_DU(TJEState* state,
+static void tjei_encode_and_write_MCU(TJEState* state,
                                      float* mcu,
 #if TJE_USE_FAST_DCT
                                      float* qt,  // Pre-processed quantization matrix.
@@ -795,8 +795,7 @@ static void tjei_encode_and_write_DU(TJEState* state,
     int last_non_zero_i = 0;
     // Find the last non-zero element.
     for ( int i = 63; i > 0; --i ) {
-        if (du[i] != 0)
-        {
+        if (du[i] != 0) {
             last_non_zero_i = i;
             break;
         }
@@ -1067,7 +1066,7 @@ static int tjei_encode_main(TJEState* state,
                 }
             }
 
-            tjei_encode_and_write_DU(state, du_y,
+            tjei_encode_and_write_MCU(state, du_y,
 #if TJE_USE_FAST_DCT
                                      pqt.luma,
 #else
@@ -1076,7 +1075,7 @@ static int tjei_encode_main(TJEState* state,
                                      state->ehuffsize[LUMA_DC], state->ehuffcode[LUMA_DC],
                                      state->ehuffsize[LUMA_AC], state->ehuffcode[LUMA_AC],
                                      &pred_y, &bitbuffer, &location);
-            tjei_encode_and_write_DU(state, du_b,
+            tjei_encode_and_write_MCU(state, du_b,
 #if TJE_USE_FAST_DCT
                                      pqt.chroma,
 #else
@@ -1085,7 +1084,7 @@ static int tjei_encode_main(TJEState* state,
                                      state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
                                      state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
                                      &pred_b, &bitbuffer, &location);
-            tjei_encode_and_write_DU(state, du_r,
+            tjei_encode_and_write_MCU(state, du_r,
 #if TJE_USE_FAST_DCT
                                      pqt.chroma,
 #else

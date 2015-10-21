@@ -156,26 +156,6 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 #include <stdio.h>  // FILE, puts
 #include <string.h> // memcpy
 
-
-#ifndef tje_malloc
-#if defined(_WIN32) || defined(__linux__)
-#include <malloc.h>
-#elif defined(__MACH__)
-#include <malloc/malloc.h>
-#endif
-#define tje_malloc malloc
-#endif
-
-#ifndef tje_free
-#if defined(_WIN32) || defined(__linux__)
-#include <malloc.h>
-#elif defined(__MACH__)
-#include <malloc/malloc.h>
-#endif
-#define tje_free(x) free((x)); x = 0;
-#endif
-
-
 #if !defined(tje_write)
 
 #define TJEI_BUFFER_SIZE 1024
@@ -1153,7 +1133,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
     uint8_t qt_factor = 1;
     switch(quality) {
     case 3:
-        for (int i = 0; i < 64; ++ i) {
+        for ( int i = 0; i < 64; ++i ) {
             state.qt_luma[i]   = 1;
             state.qt_chroma[i] = 1;
         }

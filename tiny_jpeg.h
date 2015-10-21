@@ -83,6 +83,11 @@ extern "C"
 {
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"  // We use {0}, which will zero-out the struct.
+#pragma GCC diagnostic ignored "-Wmissing-braces"
+#endif
 
 // ============================================================9
 // Public interface:
@@ -1171,6 +1176,11 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 // ============================================================
 #endif // TJE_IMPLEMENTATION
 // ============================================================
+//
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 
 #ifdef __cplusplus
 }  // extern C

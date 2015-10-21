@@ -1091,6 +1091,7 @@ static int tjei_encode_main(TJEState* state,
 #if defined(TJEI_BUFFER_SIZE)
     if (tjei_g_output_buffer_count) {
         fwrite(tjei_g_output_buffer, tjei_g_output_buffer_count, 1, state->fd);
+        tjei_g_output_buffer_count = 0;
     }
 #endif
 

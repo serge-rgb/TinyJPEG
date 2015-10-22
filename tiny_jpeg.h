@@ -1095,8 +1095,8 @@ static int tjei_encode_main(TJEState* state,
 
     // Finish the image.
     { // Flush
-        while (location != 0) {
-            tjei_write_bits(state, &bitbuffer, &location, (uint16_t)(8 - location), 0xff);
+        if (location > 0 && location < 8) {
+            tjei_write_bits(state, &bitbuffer, &location, (uint16_t)(8 - location), 0);
         }
     }
     uint16_t EOI = tjei_be_word(0xffd9);

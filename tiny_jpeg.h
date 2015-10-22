@@ -235,6 +235,8 @@ static uint8_t tjei_default_qt_luma_from_spec[] = {
    72,92,95,98,112,100,103, 99,
 };
 
+// Unused
+#if 0
 static uint8_t tjei_default_qt_chroma_from_spec[] = {
     // K.1 - suggested chrominance QT
    17,18,24,47,99,99,99,99,
@@ -246,6 +248,7 @@ static uint8_t tjei_default_qt_chroma_from_spec[] = {
    99,99,99,99,99,99,99,99,
    99,99,99,99,99,99,99,99,
 };
+#endif
 
 static uint8_t tjei_default_qt_chroma_from_paper[] = {
     // Example QT from JPEG paper

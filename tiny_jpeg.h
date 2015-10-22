@@ -365,13 +365,15 @@ typedef struct TJEJPEGHeader_s {
     uint8_t  units;
     uint16_t x_density;
     uint16_t y_density;
-    uint16_t thumb_size;
+    uint8_t  x_thumb;
+    uint8_t  y_thumb;
+} TJEJPEGHeader;
 
-    // Our signature
+typedef struct TJEJPEGComment_s {
     uint16_t com;
     uint16_t com_len;
     char     com_str[sizeof(tjeik_com_str) - 1];
-} TJEJPEGHeader;
+} TJEJPEGComment;
 
 // Helper struct for TJEFrameHeader (below).
 typedef struct TJEComponentSpec_s {
@@ -925,21 +927,26 @@ static int tjei_encode_main(TJEState* state,
         // JFIF header.
         header.SOI = tjei_be_word(0xffd8);  // Sequential DCT
         header.APP0 = tjei_be_word(0xffe0);
-        header.jfif_len = tjei_be_word(0x0016);
+
+        uint16_t jfif_len = sizeof(TJEJPEGHeader) - 4 /*SOI & APP0 markers*/;
+        header.jfif_len = tjei_be_word(jfif_len);
         memcpy(header.jfif_id, (void*)tjeik_jfif_id, 5);
         header.version = tjei_be_word(0x0102);
-        //header.units = 0x01;
-        //header.x_density = tjei_be_word(0x0060);  // 96 DPI
-        //header.y_density = tjei_be_word(0x0060);  // 96 DPI
-        header.units = 0x00;
-        header.x_density = tjei_be_word(0x0000);
-        header.y_density = tjei_be_word(0x0000);
-        header.thumb_size = 0;
-        /* // Comment */
-        header.com = tjei_be_word(0xfffe);
-        header.com_len = 16 + sizeof(tjeik_com_str) - 1;
-        memcpy(header.com_str, (void*)tjeik_com_str, sizeof(tjeik_com_str) - 1); // Skip the 0-bit
+        header.units = 0x01;  // Dots-per-inch
+        header.x_density = tjei_be_word(0x0060);  // 96 DPI
+        header.y_density = tjei_be_word(0x0060);  // 96 DPI
+        header.x_thumb = 0;
+        header.y_thumb = 0;
         tje_write(state, &header, sizeof(TJEJPEGHeader), 1);
+    }
+    {  // Write comment
+        TJEJPEGComment com;
+        uint16_t com_len = 2 + sizeof(tjeik_com_str) - 1;
+        // Comment
+        com.com = tjei_be_word(0xfffe);
+        com.com_len = tjei_be_word(com_len);
+        memcpy(com.com_str, (void*)tjeik_com_str, com_len);
+        tje_write(state, &com, sizeof(TJEJPEGComment), 1);
     }
 
     // Write quantization tables.
@@ -982,7 +989,7 @@ static int tjei_encode_main(TJEState* state,
     {
         TJEScanHeader header;
         header.SOS = tjei_be_word(0xffda);
-        header.len = tjei_be_word((uint16_t)(6 + (2 * 3)));
+        header.len = tjei_be_word((uint16_t)(6 + (sizeof(TJEFrameComponentSpec) * 3)));
         header.num_components = 3;
 
         uint8_t tables[3] = {

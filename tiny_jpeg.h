@@ -1124,7 +1124,7 @@ int tje_encode_to_file(const char* dest_path,
 }
 
 // Define public interface.
-int tje_encode_to_file_at_quality(const char* dest_path,One of the benefits of keeping the API small is that
+int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int quality,
                                   const int width,
                                   const int height,

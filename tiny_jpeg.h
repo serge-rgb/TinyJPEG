@@ -87,6 +87,7 @@ extern "C"
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"  // We use {0}, which will zero-out the struct.
 #pragma GCC diagnostic ignored "-Wmissing-braces"
+#pragma GCC diagnostic ignored "-Wpadded"
 #endif
 
 // ============================================================9
@@ -337,9 +338,9 @@ static uint8_t tjei_zig_zag[64] = {
 // Memory order as big endian. 0xhilo -> 0xlohi which looks as 0xhilo in memory.
 static uint16_t tjei_be_word(const uint16_t le_word)
 {
-    uint8_t lo = (uint8_t)(le_word & 0x00ff);
-    uint8_t hi = (uint8_t)((le_word & 0xff00) >> 8);
-    return (((uint16_t)lo) << 8) | hi;
+    uint16_t lo = (le_word & 0x00ff);
+    uint16_t hi = ((le_word & 0xff00) >> 8);
+    return (uint16_t)((lo << 8) | hi);
 }
 
 // ============================================================
@@ -409,7 +410,7 @@ typedef struct TJEScanHeader_s {
 #pragma pack(pop)
 
 
-void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t num_elements)
+static void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t num_elements)
 {
     size_t to_write = num_bytes * num_elements;
 
@@ -436,10 +437,10 @@ void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t num_eleme
 
 static void tjei_write_DQT(TJEState* state, uint8_t* matrix, uint8_t id)
 {
-    int16_t DQT = tjei_be_word(0xffdb);
-    tje_write(state, &DQT, sizeof(int16_t), 1);
-    int16_t len = tjei_be_word(0x0043); // 2(len) + 1(id) + 64(matrix) = 67 = 0x43
-    tje_write(state, &len, sizeof(int16_t), 1);
+    uint16_t DQT = tjei_be_word(0xffdb);
+    tje_write(state, &DQT, sizeof(uint16_t), 1);
+    uint16_t len = tjei_be_word(0x0043); // 2(len) + 1(id) + 64(matrix) = 67 = 0x43
+    tje_write(state, &len, sizeof(uint16_t), 1);
     assert(id < 4);
     uint8_t precision_and_id = id;  // 0x0000 8 bits | 0x00id
     tje_write(state, &precision_and_id, sizeof(uint8_t), 1);
@@ -464,17 +465,17 @@ static void tjei_write_DHT(TJEState* state,
     }
     assert(num_values <= 0xffff);
 
-    int16_t DHT = tjei_be_word(0xffc4);
+    uint16_t DHT = tjei_be_word(0xffc4);
     // 2(len) + 1(Tc|th) + 16 (num lengths) + ?? (num values)
     uint16_t len = tjei_be_word(2 + 1 + 16 + (uint16_t)num_values);
     assert(id < 4);
-    uint8_t tc_th = ((((uint8_t)ht_class) << 4) | id);
+    uint8_t tc_th = (uint8_t)((((uint8_t)ht_class) << 4) | id);
 
     tje_write(state, &DHT, sizeof(uint16_t), 1);
     tje_write(state, &len, sizeof(uint16_t), 1);
     tje_write(state, &tc_th, sizeof(uint8_t), 1);
     tje_write(state, matrix_len, sizeof(uint8_t), 16);
-    tje_write(state, matrix_val, sizeof(uint8_t), num_values);
+    tje_write(state, matrix_val, sizeof(uint8_t), (size_t)num_values);
 }
 // ============================================================
 //  Huffman deflation code.
@@ -508,7 +509,7 @@ static uint16_t* tjei_huff_get_codes(uint16_t codes[], uint8_t* huffsize, int64_
             return codes;
         }
         do {
-            code = code << 1;
+            code = (uint16_t)(code << 1);
             ++sz;
         } while( huffsize[k] != sz );
     }
@@ -544,7 +545,7 @@ TJEI_FORCE_INLINE void tjei_calculate_variable_length_int(int value, uint16_t ou
     while( abs_val >>= 1 ) {
         ++out[1];
     }
-    out[0] = value & ((1 << out[1]) - 1);
+    out[0] = (uint16_t)(value & ((1 << out[1]) - 1));
 }
 
 // Write bits to file.
@@ -562,7 +563,7 @@ TJEI_FORCE_INLINE void tjei_write_bits(TJEState* state,
 
     // Push the stack.
     uint32_t nloc = *location + num_bits;
-    *bitbuffer |= (bits << (32 - nloc));
+    *bitbuffer |= (uint32_t)(bits << (32 - nloc));
     *location = nloc;
     while ( *location >= 8 ) {
         // Grab the most significant byte.
@@ -591,7 +592,7 @@ TJEI_FORCE_INLINE void tjei_write_bits(TJEState* state,
 //  JPEG textbook (see REFERENCES section in file README).  The following code
 //  is based directly on figure 4-8 in P&M.
 //
-void fdct (float * data)
+static void fdct (float * data)
 {
     float tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
     float tmp10, tmp11, tmp12, tmp13;
@@ -699,8 +700,8 @@ void fdct (float * data)
         dataptr++;          /* advance pointer to next column */
     }
 }
-
-float slow_fdct(int u, int v, float* data)
+#if !TJE_USE_FAST_DCT
+static float slow_fdct(int u, int v, float* data)
 {
 #define kPI 3.14159265f
     float res = 0.0f;
@@ -717,6 +718,7 @@ float slow_fdct(int u, int v, float* data)
     return res;
 #undef kPI
 }
+#endif
 
 #define ABS(x) ((x) < 0 ? -(x) : (x))
 
@@ -808,7 +810,7 @@ static void tjei_encode_and_write_MCU(TJEState* state,
         assert(zero_count < 0x10);
         assert(vli[1] <= 10);
 
-        uint16_t sym1 = ((uint16_t)zero_count << 4) | vli[1];
+        uint16_t sym1 = (uint16_t)((uint16_t)zero_count << 4) | vli[1];
 
         assert(huff_ac_len[sym1] != 0);
 
@@ -945,7 +947,7 @@ static int tjei_encode_main(TJEState* state,
         // Comment
         com.com = tjei_be_word(0xfffe);
         com.com_len = tjei_be_word(com_len);
-        memcpy(com.com_str, (void*)tjeik_com_str, com_len);
+        memcpy(com.com_str, (void*)tjeik_com_str, sizeof(tjeik_com_str)-1);
         tje_write(state, &com, sizeof(TJEJPEGComment), 1);
     }
 

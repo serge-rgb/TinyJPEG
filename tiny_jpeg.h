@@ -723,17 +723,17 @@ static float slow_fdct(int u, int v, float* data)
 #define ABS(x) ((x) < 0 ? -(x) : (x))
 
 static void tjei_encode_and_write_MCU(TJEState* state,
-                                     float* mcu,
+                                      float* mcu,
 #if TJE_USE_FAST_DCT
-                                     float* qt,  // Pre-processed quantization matrix.
+                                      float* qt,  // Pre-processed quantization matrix.
 #else
-                                     uint8_t* qt,
+                                      uint8_t* qt,
 #endif
-                                     uint8_t* huff_dc_len, uint16_t* huff_dc_code, // Huffman tables
-                                     uint8_t* huff_ac_len, uint16_t* huff_ac_code,
-                                     int* pred,  // Previous DC coefficient
-                                     uint32_t* bitbuffer,  // Bitstack.
-                                     uint32_t* location)
+                                      uint8_t* huff_dc_len, uint16_t* huff_dc_code, // Huffman tables
+                                      uint8_t* huff_ac_len, uint16_t* huff_ac_code,
+                                      int* pred,  // Previous DC coefficient
+                                      uint32_t* bitbuffer,  // Bitstack.
+                                      uint32_t* location)
 {
     int du[64];  // Data unit in zig-zag order
 
@@ -828,10 +828,10 @@ static void tjei_encode_and_write_MCU(TJEState* state,
 }
 
 enum {
-    LUMA_DC,
-    LUMA_AC,
-    CHROMA_DC,
-    CHROMA_AC,
+    TJEI_LUMA_DC,
+    TJEI_LUMA_AC,
+    TJEI_CHROMA_DC,
+    TJEI_CHROMA_AC,
 };
 
 #if TJE_USE_FAST_DCT
@@ -846,15 +846,15 @@ static void tjei_huff_expand (TJEState* state)
 {
     assert(state);
 
-    state->ht_bits[LUMA_DC]   = tjei_default_ht_luma_dc_len;
-    state->ht_bits[LUMA_AC]   = tjei_default_ht_luma_ac_len;
-    state->ht_bits[CHROMA_DC] = tjei_default_ht_chroma_dc_len;
-    state->ht_bits[CHROMA_AC] = tjei_default_ht_chroma_ac_len;
+    state->ht_bits[TJEI_LUMA_DC]   = tjei_default_ht_luma_dc_len;
+    state->ht_bits[TJEI_LUMA_AC]   = tjei_default_ht_luma_ac_len;
+    state->ht_bits[TJEI_CHROMA_DC] = tjei_default_ht_chroma_dc_len;
+    state->ht_bits[TJEI_CHROMA_AC] = tjei_default_ht_chroma_ac_len;
 
-    state->ht_vals[LUMA_DC]   = tjei_default_ht_luma_dc;
-    state->ht_vals[LUMA_AC]   = tjei_default_ht_luma_ac;
-    state->ht_vals[CHROMA_DC] = tjei_default_ht_chroma_dc;
-    state->ht_vals[CHROMA_AC] = tjei_default_ht_chroma_ac;
+    state->ht_vals[TJEI_LUMA_DC]   = tjei_default_ht_luma_dc;
+    state->ht_vals[TJEI_LUMA_AC]   = tjei_default_ht_luma_ac;
+    state->ht_vals[TJEI_CHROMA_DC] = tjei_default_ht_chroma_dc;
+    state->ht_vals[TJEI_CHROMA_AC] = tjei_default_ht_chroma_ac;
 
     // How many codes in total for each of LUMA_(DC|AC) and CHROMA_(DC|AC)
     int32_t spec_tables_len[4] = { 0 };
@@ -982,10 +982,10 @@ static int tjei_encode_main(TJEState* state,
         tje_write(state, &header, sizeof(TJEFrameHeader), 1);
     }
 
-    tjei_write_DHT(state, state->ht_bits[LUMA_DC], state->ht_vals[LUMA_DC], DC, 0);
-    tjei_write_DHT(state, state->ht_bits[LUMA_AC], state->ht_vals[LUMA_AC], AC, 0);
-    tjei_write_DHT(state, state->ht_bits[CHROMA_DC], state->ht_vals[CHROMA_DC], DC, 1);
-    tjei_write_DHT(state, state->ht_bits[CHROMA_AC], state->ht_vals[CHROMA_AC], AC, 1);
+    tjei_write_DHT(state, state->ht_bits[TJEI_LUMA_DC],   state->ht_vals[TJEI_LUMA_DC], DC, 0);
+    tjei_write_DHT(state, state->ht_bits[TJEI_LUMA_AC],   state->ht_vals[TJEI_LUMA_AC], AC, 0);
+    tjei_write_DHT(state, state->ht_bits[TJEI_CHROMA_DC], state->ht_vals[TJEI_CHROMA_DC], DC, 1);
+    tjei_write_DHT(state, state->ht_bits[TJEI_CHROMA_AC], state->ht_vals[TJEI_CHROMA_AC], AC, 1);
 
     // Write start of scan
     {
@@ -1069,8 +1069,8 @@ static int tjei_encode_main(TJEState* state,
 #else
                                      state->qt_luma,
 #endif
-                                     state->ehuffsize[LUMA_DC], state->ehuffcode[LUMA_DC],
-                                     state->ehuffsize[LUMA_AC], state->ehuffcode[LUMA_AC],
+                                     state->ehuffsize[TJEI_LUMA_DC], state->ehuffcode[TJEI_LUMA_DC],
+                                     state->ehuffsize[TJEI_LUMA_AC], state->ehuffcode[TJEI_LUMA_AC],
                                      &pred_y, &bitbuffer, &location);
             tjei_encode_and_write_MCU(state, du_b,
 #if TJE_USE_FAST_DCT
@@ -1078,8 +1078,8 @@ static int tjei_encode_main(TJEState* state,
 #else
                                      state->qt_chroma,
 #endif
-                                     state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
-                                     state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
+                                     state->ehuffsize[TJEI_CHROMA_DC], state->ehuffcode[TJEI_CHROMA_DC],
+                                     state->ehuffsize[TJEI_CHROMA_AC], state->ehuffcode[TJEI_CHROMA_AC],
                                      &pred_b, &bitbuffer, &location);
             tjei_encode_and_write_MCU(state, du_r,
 #if TJE_USE_FAST_DCT
@@ -1087,8 +1087,8 @@ static int tjei_encode_main(TJEState* state,
 #else
                                      state->qt_chroma,
 #endif
-                                     state->ehuffsize[CHROMA_DC], state->ehuffcode[CHROMA_DC],
-                                     state->ehuffsize[CHROMA_AC], state->ehuffcode[CHROMA_AC],
+                                     state->ehuffsize[TJEI_CHROMA_DC], state->ehuffcode[TJEI_CHROMA_DC],
+                                     state->ehuffsize[TJEI_CHROMA_AC], state->ehuffcode[TJEI_CHROMA_AC],
                                      &pred_r, &bitbuffer, &location);
 
 

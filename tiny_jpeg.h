@@ -449,8 +449,8 @@ static void tjei_write_DQT(TJEState* state, uint8_t* matrix, uint8_t id)
 }
 
 typedef enum {
-    DC = 0,
-    AC = 1
+    TJEI_DC = 0,
+    TJEI_AC = 1
 } TJEHuffmanTableClass;
 
 static void tjei_write_DHT(TJEState* state,
@@ -592,7 +592,7 @@ TJEI_FORCE_INLINE void tjei_write_bits(TJEState* state,
 //  JPEG textbook (see REFERENCES section in file README).  The following code
 //  is based directly on figure 4-8 in P&M.
 //
-static void fdct (float * data)
+static void tjei_fdct (float * data)
 {
     float tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
     float tmp10, tmp11, tmp12, tmp13;
@@ -741,7 +741,7 @@ static void tjei_encode_and_write_MCU(TJEState* state,
     memcpy(dct_mcu, mcu, 64 * sizeof(float));
 
 #if TJE_USE_FAST_DCT
-    fdct(dct_mcu);
+    tjei_fdct(dct_mcu);
     for ( int i = 0; i < 64; ++i ) {
         float fval = dct_mcu[i];
         fval *= qt[i];
@@ -982,10 +982,10 @@ static int tjei_encode_main(TJEState* state,
         tje_write(state, &header, sizeof(TJEFrameHeader), 1);
     }
 
-    tjei_write_DHT(state, state->ht_bits[TJEI_LUMA_DC],   state->ht_vals[TJEI_LUMA_DC], DC, 0);
-    tjei_write_DHT(state, state->ht_bits[TJEI_LUMA_AC],   state->ht_vals[TJEI_LUMA_AC], AC, 0);
-    tjei_write_DHT(state, state->ht_bits[TJEI_CHROMA_DC], state->ht_vals[TJEI_CHROMA_DC], DC, 1);
-    tjei_write_DHT(state, state->ht_bits[TJEI_CHROMA_AC], state->ht_vals[TJEI_CHROMA_AC], AC, 1);
+    tjei_write_DHT(state, state->ht_bits[TJEI_LUMA_DC],   state->ht_vals[TJEI_LUMA_DC], TJEI_DC, 0);
+    tjei_write_DHT(state, state->ht_bits[TJEI_LUMA_AC],   state->ht_vals[TJEI_LUMA_AC], TJEI_AC, 0);
+    tjei_write_DHT(state, state->ht_bits[TJEI_CHROMA_DC], state->ht_vals[TJEI_CHROMA_DC], TJEI_DC, 1);
+    tjei_write_DHT(state, state->ht_bits[TJEI_CHROMA_AC], state->ht_vals[TJEI_CHROMA_AC], TJEI_AC, 1);
 
     // Write start of scan
     {

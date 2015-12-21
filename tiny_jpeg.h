@@ -145,6 +145,10 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 #ifdef TJE_IMPLEMENTATION
 
 
+#define tjei_min(a, b) ((a) < b) ? (a) : (b);
+#define tjei_max(a, b) ((a) < b) ? (b) : (a);
+
+
 #if defined(_MSC_VER)
 #define TJEI_FORCE_INLINE __forceinline
 // #define TJEI_FORCE_INLINE __declspec(noinline)  // For profiling
@@ -415,7 +419,7 @@ static void tjei_fwrite(TJEState* state, void* data, size_t num_bytes, size_t nu
     size_t to_write = num_bytes * num_elements;
 
     // Cap to the buffer available size and copy memory.
-    size_t capped_count = min(to_write, TJEI_BUFFER_SIZE - 1 - tjei_g_output_buffer_count);
+    size_t capped_count = tjei_min(to_write, TJEI_BUFFER_SIZE - 1 - tjei_g_output_buffer_count);
 
     memcpy(tjei_g_output_buffer + tjei_g_output_buffer_count, data, capped_count);
     tjei_g_output_buffer_count += capped_count;

@@ -16,6 +16,7 @@
  * It is written in C99. And depends on the C standard library.
  * Works with C++11
  *
+ *
  * ==== Thanks ====
  *
  *  AssociationSirius (Bug reports)
@@ -27,7 +28,6 @@
  * This software is in the public domain. Where that dedication is not
  * recognized, you are granted a perpetual, irrevocable license to copy and
  * modify this file as you see fit.
- *
  *
  */
 
@@ -222,25 +222,30 @@ int tje_encode_with_func(tje_write_func* func,
 #endif  // NDEBUG
 
 
-typedef struct {
-    void* context;
+typedef struct
+{
+    void*           context;
     tje_write_func* func;
 } TJEWriteContext;
 
-typedef struct TJEState_s {
-    uint8_t     ehuffsize[4][257];
-    uint16_t    ehuffcode[4][256];
+typedef struct
+{
+    // Huffman data.
+    uint8_t         ehuffsize[4][257];
+    uint16_t        ehuffcode[4][256];
+    uint8_t const * ht_bits[4];
+    uint8_t const * ht_vals[4];
 
-    uint8_t const *    ht_bits[4];
-    uint8_t const *    ht_vals[4];
+    // Cuantization tables.
+    uint8_t         qt_luma[64];
+    uint8_t         qt_chroma[64];
 
-    uint8_t     qt_luma[64];
-    uint8_t     qt_chroma[64];
-
+    // fwrite by default. User-defined when using tje_encode_with_func.
     TJEWriteContext write_context;
-    // Buffer TJE_BUFFER_SIZE in memory and flush when ready
-    size_t output_buffer_count;
-    uint8_t output_buffer[TJEI_BUFFER_SIZE];
+
+    // Buffered output. Big performance win when using the usual stdlib implementations.
+    size_t          output_buffer_count;
+    uint8_t         output_buffer[TJEI_BUFFER_SIZE];
 } TJEState;
 
 // ============================================================
@@ -258,7 +263,8 @@ typedef struct TJEState_s {
 
 
 // K.1 - suggested luminance QT
-static const uint8_t tjei_default_qt_luma_from_spec[] = {
+static const uint8_t tjei_default_qt_luma_from_spec[] =
+{
    16,11,10,16, 24, 40, 51, 61,
    12,12,14,19, 26, 58, 60, 55,
    14,13,16,24, 40, 57, 69, 56,
@@ -271,7 +277,8 @@ static const uint8_t tjei_default_qt_luma_from_spec[] = {
 
 // Unused
 #if 0
-static const uint8_t tjei_default_qt_chroma_from_spec[] = {
+static const uint8_t tjei_default_qt_chroma_from_spec[] =
+{
     // K.1 - suggested chrominance QT
    17,18,24,47,99,99,99,99,
    18,21,26,66,99,99,99,99,
@@ -284,43 +291,50 @@ static const uint8_t tjei_default_qt_chroma_from_spec[] = {
 };
 #endif
 
-static const uint8_t tjei_default_qt_chroma_from_paper[] = {
+static const uint8_t tjei_default_qt_chroma_from_paper[] =
+{
     // Example QT from JPEG paper
-   16,  12, 14,  14, 18, 24,  49,  72,
-   11,  10, 16,  24, 40, 51,  61,  12,
-   13,  17, 22,  35, 64, 92,  14,  16,
-   22,  37, 55,  78, 95, 19,  24,  29,
-   56,  64, 87,  98, 26, 40,  51,  68,
-   81, 103, 112, 58, 57, 87,  109, 104,
-   121,100, 60,  69, 80, 103, 113, 120,
-   103, 55, 56,  62, 77, 92,  101, 99,
+    16,  12, 14,  14, 18, 24,  49,  72,
+    11,  10, 16,  24, 40, 51,  61,  12,
+    13,  17, 22,  35, 64, 92,  14,  16,
+    22,  37, 55,  78, 95, 19,  24,  29,
+    56,  64, 87,  98, 26, 40,  51,  68,
+    81, 103, 112, 58, 57, 87,  109, 104,
+    121,100, 60,  69, 80, 103, 113, 120,
+    103, 55, 56,  62, 77, 92,  101, 99,
 };
 
 // == Procedure to 'deflate' the huffman tree: JPEG spec, C.2
 
 // Number of 16 bit values for every code length. (K.3.3.1)
-static const uint8_t tjei_default_ht_luma_dc_len[16] = {
+static const uint8_t tjei_default_ht_luma_dc_len[16] =
+{
     0,1,5,1,1,1,1,1,1,0,0,0,0,0,0,0
 };
 // values
-static const uint8_t tjei_default_ht_luma_dc[12] = {
+static const uint8_t tjei_default_ht_luma_dc[12] =
+{
     0,1,2,3,4,5,6,7,8,9,10,11
 };
 
 // Number of 16 bit values for every code length. (K.3.3.1)
-static const uint8_t tjei_default_ht_chroma_dc_len[16] = {
+static const uint8_t tjei_default_ht_chroma_dc_len[16] =
+{
     0,3,1,1,1,1,1,1,1,1,1,0,0,0,0,0
 };
 // values
-static const uint8_t tjei_default_ht_chroma_dc[12] = {
+static const uint8_t tjei_default_ht_chroma_dc[12] =
+{
     0,1,2,3,4,5,6,7,8,9,10,11
 };
 
 // Same as above, but AC coefficients.
-static const uint8_t tjei_default_ht_luma_ac_len[16] = {
+static const uint8_t tjei_default_ht_luma_ac_len[16] =
+{
     0,2,1,3,3,2,4,3,5,5,4,4,0,0,1,0x7d
 };
-static const uint8_t tjei_default_ht_luma_ac[] = {
+static const uint8_t tjei_default_ht_luma_ac[] =
+{
     0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
     0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xA1, 0x08, 0x23, 0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0,
     0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0A, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x25, 0x26, 0x27, 0x28,
@@ -334,10 +348,12 @@ static const uint8_t tjei_default_ht_luma_ac[] = {
     0xF9, 0xFA
 };
 
-static const uint8_t tjei_default_ht_chroma_ac_len[16] = {
+static const uint8_t tjei_default_ht_chroma_ac_len[16] =
+{
     0,2,1,2,4,4,3,4,7,5,4,4,0,1,2,0x77
 };
-static const uint8_t tjei_default_ht_chroma_ac[] = {
+static const uint8_t tjei_default_ht_chroma_ac[] =
+{
     0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71,
     0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xA1, 0xB1, 0xC1, 0x09, 0x23, 0x33, 0x52, 0xF0,
     0x15, 0x62, 0x72, 0xD1, 0x0A, 0x16, 0x24, 0x34, 0xE1, 0x25, 0xF1, 0x17, 0x18, 0x19, 0x1A, 0x26,
@@ -357,15 +373,16 @@ static const uint8_t tjei_default_ht_chroma_ac[] = {
 // ============================================================
 
 // Zig-zag order:
-static const uint8_t tjei_zig_zag[64] = {
-   0,   1,  5,  6, 14, 15, 27, 28,
-   2,   4,  7, 13, 16, 26, 29, 42,
-   3,   8, 12, 17, 25, 30, 41, 43,
-   9,  11, 18, 24, 31, 40, 44, 53,
-   10, 19, 23, 32, 39, 45, 52, 54,
-   20, 22, 33, 38, 46, 51, 55, 60,
-   21, 34, 37, 47, 50, 56, 59, 61,
-   35, 36, 48, 49, 57, 58, 62, 63,
+static const uint8_t tjei_zig_zag[64] =
+{
+    0,   1,  5,  6, 14, 15, 27, 28,
+    2,   4,  7, 13, 16, 26, 29, 42,
+    3,   8, 12, 17, 25, 30, 41, 43,
+    9,  11, 18, 24, 31, 40, 44, 53,
+    10, 19, 23, 32, 39, 45, 52, 54,
+    20, 22, 33, 38, 46, 51, 55, 60,
+    21, 34, 37, 47, 50, 56, 59, 61,
+    35, 36, 48, 49, 57, 58, 62, 63,
 };
 
 // Memory order as big endian. 0xhilo -> 0xlohi which looks as 0xhilo in memory.
@@ -389,7 +406,8 @@ static const uint8_t tjeik_com_str[] = "Created by Tiny JPEG Encoder";
 // TODO: Get rid of packed structs!
 #pragma pack(push)
 #pragma pack(1)
-typedef struct TJEJPEGHeader_s {
+typedef struct
+{
     uint16_t SOI;
     // JFIF header.
     uint16_t APP0;
@@ -403,20 +421,23 @@ typedef struct TJEJPEGHeader_s {
     uint8_t  y_thumb;
 } TJEJPEGHeader;
 
-typedef struct TJEJPEGComment_s {
+typedef struct
+{
     uint16_t com;
     uint16_t com_len;
     char     com_str[sizeof(tjeik_com_str) - 1];
 } TJEJPEGComment;
 
 // Helper struct for TJEFrameHeader (below).
-typedef struct TJEComponentSpec_s {
+typedef struct
+{
     uint8_t  component_id;
     uint8_t  sampling_factors;    // most significant 4 bits: horizontal. 4 LSB: vertical (A.1.1)
     uint8_t  qt;                  // Quantization table selector.
 } TJEComponentSpec;
 
-typedef struct TJEFrameHeader_s {
+typedef struct
+{
     uint16_t         SOF;
     uint16_t         len;                   // 8 + 3 * frame.num_components
     uint8_t          precision;             // Sample precision (bits per sample).
@@ -426,12 +447,14 @@ typedef struct TJEFrameHeader_s {
     TJEComponentSpec component_spec[3];
 } TJEFrameHeader;
 
-typedef struct TJEFrameComponentSpec_s {
+typedef struct
+{
     uint8_t component_id;                 // Just as with TJEComponentSpec
     uint8_t dc_ac;                        // (dc|ac)
 } TJEFrameComponentSpec;
 
-typedef struct TJEScanHeader_s {
+typedef struct
+{
     uint16_t              SOS;
     uint16_t              len;
     uint8_t               num_components;  // 3.
@@ -480,7 +503,8 @@ static void tjei_write_DQT(TJEState* state, const uint8_t* matrix, uint8_t id)
     tjei_write(state, matrix, 64*sizeof(uint8_t), 1);
 }
 
-typedef enum {
+typedef enum
+{
     TJEI_DC = 0,
     TJEI_AC = 1
 } TJEHuffmanTableClass;
@@ -867,14 +891,15 @@ enum {
 };
 
 #if TJE_USE_FAST_DCT
-struct TJEProcessedQT {
+struct TJEProcessedQT
+{
     float chroma[64];
     float luma[64];
 };
 #endif
 
 // Set up huffman tables in state.
-static void tjei_huff_expand (TJEState* state)
+static void tjei_huff_expand(TJEState* state)
 {
     assert(state);
 

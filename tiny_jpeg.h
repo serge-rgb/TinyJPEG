@@ -186,11 +186,6 @@ int tje_encode_with_func(tje_write_func* func,
 
 #define TJEI_BUFFER_SIZE 1024
 
-// Buffer TJE_BUFFER_SIZE in memory and flush when ready
-static size_t tjei_g_output_buffer_count;
-static uint8_t tjei_g_output_buffer[TJEI_BUFFER_SIZE];
-
-
 #ifdef _WIN32
 
 #include <windows.h>
@@ -226,13 +221,16 @@ typedef struct TJEState_s {
     uint8_t     ehuffsize[4][257];
     uint16_t    ehuffcode[4][256];
 
-    uint8_t*    ht_bits[4];
-    uint8_t*    ht_vals[4];
+    uint8_t const *    ht_bits[4];
+    uint8_t const *    ht_vals[4];
 
     uint8_t     qt_luma[64];
     uint8_t     qt_chroma[64];
 
     TJEWriteContext write_context;
+    // Buffer TJE_BUFFER_SIZE in memory and flush when ready
+    size_t output_buffer_count;
+    uint8_t output_buffer[TJEI_BUFFER_SIZE];
 } TJEState;
 
 // ============================================================
@@ -250,7 +248,7 @@ typedef struct TJEState_s {
 
 
 // K.1 - suggested luminance QT
-static uint8_t tjei_default_qt_luma_from_spec[] = {
+static const uint8_t tjei_default_qt_luma_from_spec[] = {
    16,11,10,16, 24, 40, 51, 61,
    12,12,14,19, 26, 58, 60, 55,
    14,13,16,24, 40, 57, 69, 56,
@@ -263,7 +261,7 @@ static uint8_t tjei_default_qt_luma_from_spec[] = {
 
 // Unused
 #if 0
-static uint8_t tjei_default_qt_chroma_from_spec[] = {
+static const uint8_t tjei_default_qt_chroma_from_spec[] = {
     // K.1 - suggested chrominance QT
    17,18,24,47,99,99,99,99,
    18,21,26,66,99,99,99,99,
@@ -276,7 +274,7 @@ static uint8_t tjei_default_qt_chroma_from_spec[] = {
 };
 #endif
 
-static uint8_t tjei_default_qt_chroma_from_paper[] = {
+static const uint8_t tjei_default_qt_chroma_from_paper[] = {
     // Example QT from JPEG paper
    16,  12, 14,  14, 18, 24,  49,  72,
    11,  10, 16,  24, 40, 51,  61,  12,
@@ -291,28 +289,28 @@ static uint8_t tjei_default_qt_chroma_from_paper[] = {
 // == Procedure to 'deflate' the huffman tree: JPEG spec, C.2
 
 // Number of 16 bit values for every code length. (K.3.3.1)
-static uint8_t tjei_default_ht_luma_dc_len[16] = {
+static const uint8_t tjei_default_ht_luma_dc_len[16] = {
     0,1,5,1,1,1,1,1,1,0,0,0,0,0,0,0
 };
 // values
-static uint8_t tjei_default_ht_luma_dc[12] = {
+static const uint8_t tjei_default_ht_luma_dc[12] = {
     0,1,2,3,4,5,6,7,8,9,10,11
 };
 
 // Number of 16 bit values for every code length. (K.3.3.1)
-static uint8_t tjei_default_ht_chroma_dc_len[16] = {
+static const uint8_t tjei_default_ht_chroma_dc_len[16] = {
     0,3,1,1,1,1,1,1,1,1,1,0,0,0,0,0
 };
 // values
-static uint8_t tjei_default_ht_chroma_dc[12] = {
+static const uint8_t tjei_default_ht_chroma_dc[12] = {
     0,1,2,3,4,5,6,7,8,9,10,11
 };
 
 // Same as above, but AC coefficients.
-static uint8_t tjei_default_ht_luma_ac_len[16] = {
+static const uint8_t tjei_default_ht_luma_ac_len[16] = {
     0,2,1,3,3,2,4,3,5,5,4,4,0,0,1,0x7d
 };
-static uint8_t tjei_default_ht_luma_ac[] = {
+static const uint8_t tjei_default_ht_luma_ac[] = {
     0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
     0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xA1, 0x08, 0x23, 0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0,
     0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0A, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x25, 0x26, 0x27, 0x28,
@@ -326,10 +324,10 @@ static uint8_t tjei_default_ht_luma_ac[] = {
     0xF9, 0xFA
 };
 
-static uint8_t tjei_default_ht_chroma_ac_len[16] = {
+static const uint8_t tjei_default_ht_chroma_ac_len[16] = {
     0,2,1,2,4,4,3,4,7,5,4,4,0,1,2,0x77
 };
-static uint8_t tjei_default_ht_chroma_ac[] = {
+static const uint8_t tjei_default_ht_chroma_ac[] = {
     0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71,
     0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xA1, 0xB1, 0xC1, 0x09, 0x23, 0x33, 0x52, 0xF0,
     0x15, 0x62, 0x72, 0xD1, 0x0A, 0x16, 0x24, 0x34, 0xE1, 0x25, 0xF1, 0x17, 0x18, 0x19, 0x1A, 0x26,
@@ -349,7 +347,7 @@ static uint8_t tjei_default_ht_chroma_ac[] = {
 // ============================================================
 
 // Zig-zag order:
-static uint8_t tjei_zig_zag[64] = {
+static const uint8_t tjei_zig_zag[64] = {
    0,   1,  5,  6, 14, 15, 27, 28,
    2,   4,  7, 13, 16, 26, 29, 42,
    3,   8, 12, 17, 25, 30, 41, 43,
@@ -435,22 +433,22 @@ typedef struct TJEScanHeader_s {
 #pragma pack(pop)
 
 
-static void tjei_write(TJEState* state, void* data, size_t num_bytes, size_t num_elements)
+static void tjei_write(TJEState* state, const void* data, size_t num_bytes, size_t num_elements)
 {
     size_t to_write = num_bytes * num_elements;
 
     // Cap to the buffer available size and copy memory.
-    size_t capped_count = tjei_min(to_write, TJEI_BUFFER_SIZE - 1 - tjei_g_output_buffer_count);
+    size_t capped_count = tjei_min(to_write, TJEI_BUFFER_SIZE - 1 - state->output_buffer_count);
 
-    memcpy(tjei_g_output_buffer + tjei_g_output_buffer_count, data, capped_count);
-    tjei_g_output_buffer_count += capped_count;
+    memcpy(state->output_buffer + state->output_buffer_count, data, capped_count);
+    state->output_buffer_count += capped_count;
 
-    assert (tjei_g_output_buffer_count <= TJEI_BUFFER_SIZE - 1);
+    assert (state->output_buffer_count <= TJEI_BUFFER_SIZE - 1);
 
     // Flush the buffer.
-    if ( tjei_g_output_buffer_count == TJEI_BUFFER_SIZE - 1 ) {
-        state->write_context.func(state->write_context.context, tjei_g_output_buffer, (int)tjei_g_output_buffer_count);
-        tjei_g_output_buffer_count = 0;
+    if ( state->output_buffer_count == TJEI_BUFFER_SIZE - 1 ) {
+        state->write_context.func(state->write_context.context, state->output_buffer, (int)state->output_buffer_count);
+        state->output_buffer_count = 0;
     }
 
     // Recursively calling ourselves with the rest of the buffer.
@@ -459,7 +457,7 @@ static void tjei_write(TJEState* state, void* data, size_t num_bytes, size_t num
     }
 }
 
-static void tjei_write_DQT(TJEState* state, uint8_t* matrix, uint8_t id)
+static void tjei_write_DQT(TJEState* state, const uint8_t* matrix, uint8_t id)
 {
     uint16_t DQT = tjei_be_word(0xffdb);
     tjei_write(state, &DQT, sizeof(uint16_t), 1);
@@ -478,8 +476,8 @@ typedef enum {
 } TJEHuffmanTableClass;
 
 static void tjei_write_DHT(TJEState* state,
-                           uint8_t* matrix_len,
-                           uint8_t* matrix_val,
+                           uint8_t const * matrix_len,
+                           uint8_t const * matrix_val,
                            TJEHuffmanTableClass ht_class,
                            uint8_t id)
 {
@@ -506,7 +504,7 @@ static void tjei_write_DHT(TJEState* state,
 // ============================================================
 
 // Returns all code sizes from the BITS specification (JPEG C.3)
-static uint8_t* tjei_huff_get_code_lengths(uint8_t huffsize[/*256*/], uint8_t* bits)
+static uint8_t* tjei_huff_get_code_lengths(uint8_t huffsize[/*256*/], uint8_t const * bits)
 {
     int k = 0;
     for ( int i = 0; i < 16; ++i ) {
@@ -541,7 +539,7 @@ static uint16_t* tjei_huff_get_codes(uint16_t codes[], uint8_t* huffsize, int64_
 
 static void tjei_huff_get_extended(uint8_t* out_ehuffsize,
                                    uint16_t* out_ehuffcode,
-                                   uint8_t* huffval,
+                                   uint8_t const * huffval,
                                    uint8_t* huffsize,
                                    uint16_t* huffcode, int64_t count)
 {
@@ -1128,9 +1126,9 @@ static int tjei_encode_main(TJEState* state,
     uint16_t EOI = tjei_be_word(0xffd9);
     tjei_write(state, &EOI, sizeof(uint16_t), 1);
 
-    if (tjei_g_output_buffer_count) {
-        state->write_context.func(state->write_context.context, tjei_g_output_buffer, (int)tjei_g_output_buffer_count);
-        tjei_g_output_buffer_count = 0;
+    if (state->output_buffer_count) {
+        state->write_context.func(state->write_context.context, state->output_buffer, (int)state->output_buffer_count);
+        state->output_buffer_count = 0;
     }
 
     return 1;

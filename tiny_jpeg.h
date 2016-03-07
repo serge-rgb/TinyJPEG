@@ -16,9 +16,19 @@
  * It is written in C99. And depends on the C standard library.
  * Works with C++11
  *
+ * ==== Thanks ====
+ *
+ *  AssociationSirius (Bug reports)
+ *  Bernard van Gastel (Thread-safe defaults, BSD compilation)
+ *
+ *
+ * ==== License ====
+ *
  * This software is in the public domain. Where that dedication is not
- * recognized, you are granted a perpetual, irrevocable license to copy
- * and modify this file as you see fit.*
+ * recognized, you are granted a perpetual, irrevocable license to copy and
+ * modify this file as you see fit.
+ *
+ *
  */
 
 // ============================================================

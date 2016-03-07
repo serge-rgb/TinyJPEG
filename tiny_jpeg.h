@@ -206,8 +206,10 @@ static uint8_t tjei_g_output_buffer[TJEI_BUFFER_SIZE];
 
 #ifdef _WIN32
 #define tje_log(msg) OutputDebugStringA(msg)
-#elif defined(__linux__) || defined(__MACH__)
+#elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #define tje_log(msg) puts(msg)
+#else
+#warning "need a tje_log definition for your platform for debugging purposes (not needed if compiling with NDEBUG)"
 #endif
 
 #else  // NDEBUG

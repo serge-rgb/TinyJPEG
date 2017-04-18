@@ -97,6 +97,10 @@ extern "C"
 #ifndef TJE_HEADER_GUARD
 #define TJE_HEADER_GUARD
 
+#ifndef ENABLE_FOPEN
+#define ENABLE_FOPEN	1
+#endif
+
 // - tje_encode_to_file -
 //
 // Usage:
@@ -110,12 +114,13 @@ extern "C"
 //
 //  RETURN:
 //      0 on error. 1 on success.
-
+#if ENABLE_FOPEN==1
 int tje_encode_to_file(const char* dest_path,
                        const int width,
                        const int height,
                        const int num_components,
                        const unsigned char* src_data);
+#endif
 
 // - tje_encode_to_file_at_quality -
 //
@@ -133,14 +138,14 @@ int tje_encode_to_file(const char* dest_path,
 //
 //  RETURN:
 //      0 on error. 1 on success.
-
+#if ENABLE_FOPEN==1
 int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int quality,
                                   const int width,
                                   const int height,
                                   const int num_components,
                                   const unsigned char* src_data);
-
+#endif
 // - tje_encode_with_func -
 //
 // Usage
@@ -1168,7 +1173,7 @@ static int tjei_encode_main(TJEState* state,
 
     return 1;
 }
-
+#if ENABLE_FOPEN==1
 int tje_encode_to_file(const char* dest_path,
                        const int width,
                        const int height,
@@ -1178,14 +1183,18 @@ int tje_encode_to_file(const char* dest_path,
     int res = tje_encode_to_file_at_quality(dest_path, 3, width, height, num_components, src_data);
     return res;
 }
+#endif
 
+#if ENABLE_FOPEN==1
 static void tjei_stdlib_func(void* context, void* data, int size)
 {
     FILE* fd = (FILE*)context;
     fwrite(data, size, 1, fd);
 }
+#endif
 
 // Define public interface.
+#if ENABLE_FOPEN==1
 int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int quality,
                                   const int width,
@@ -1206,6 +1215,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 
     return result;
 }
+#endif
 
 int tje_encode_with_func(tje_write_func* func,
                          void* context,

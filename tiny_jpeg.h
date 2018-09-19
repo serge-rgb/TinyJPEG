@@ -1232,7 +1232,8 @@ int tje_encode_with_func(tje_write_func* func,
         break;
     case 2:
         qt_factor = 10;
-        // don't break. fall through.
+        // fall through
+        // don't break.
     case 1:
         for ( int i = 0; i < 64; ++i ) {
             state.qt_luma[i]   = tjei_default_qt_luma_from_spec[i] / qt_factor;

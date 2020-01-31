@@ -1085,34 +1085,34 @@ static int tjei_encode_main(TJEState* state,
     uint32_t bitbuffer = 0;
     uint32_t location = 0;
 
-
     for ( int y = 0; y < height; y += 8 ) {
         for ( int x = 0; x < width; x += 8 ) {
             // Block loop: ====
-            for ( int off_y = 0; off_y < 8; ++off_y ) {
-                for ( int off_x = 0; off_x < 8; ++off_x ) {
-                    int block_index = (off_y * 8 + off_x);
+            for ( size_t off_y = 0; off_y < 8; ++off_y ) {
+                for ( size_t off_x = 0; off_x < 8; ++off_x ) {
+                    size_t block_index = (off_y * 8 + off_x);
 
-                    int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
+                    size_t src_index = (((y + off_y) * width) + (x + off_x));
 
-                    int col = x + off_x;
-                    int row = y + off_y;
+                    size_t cb_index = width*height + ((y + off_y)/2 * width/2) + (x + off_x)/2;
+
+                    size_t col = x + off_x;
+                    size_t row = y + off_y;
 
                     if(row >= height) {
-                        src_index -= (width * (row - height + 1)) * src_num_components;
+                        src_index -= (width * (row - height + 1));
+                        cb_index -= (width/2 * (row/2 - height/2 + 1));
                     }
                     if(col >= width) {
-                        src_index -= (col - width + 1) * src_num_components;
+                        src_index -= (col - width + 1);
+                        cb_index -= (col/2 - width/2 + 1);
                     }
-                    assert(src_index < width * height * src_num_components);
+                    assert(src_index < width * height);
+                    assert(cb_index < width * height*3/2);
 
-                    uint8_t r = src_data[src_index + 0];
-                    uint8_t g = src_data[src_index + 1];
-                    uint8_t b = src_data[src_index + 2];
-
-                    float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
-                    float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
-                    float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
+                    const uint8_t luma = src_data[src_index];
+                    const uint8_t cb = src_data[cb_index];
+                    const uint8_t cr = src_data[cb_index+1];
 
                     du_y[block_index] = luma;
                     du_b[block_index] = cb;

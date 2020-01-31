@@ -212,7 +212,7 @@ int tje_encode_with_func(tje_write_func* func,
 #ifdef _WIN32
 #define tje_log(msg) OutputDebugStringA(msg)
 #elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-#define tje_log(msg) puts(msg)
+#define tje_log(msg) qsee_log(QSEE_LOG_MSG_ERROR, msg)
 #else
 #warning "need a tje_log definition for your platform for debugging purposes (not needed if compiling with NDEBUG)"
 #endif

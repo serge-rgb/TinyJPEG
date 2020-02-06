@@ -1093,17 +1093,20 @@ static int tjei_encode_main(TJEState* state,
                 for ( int off_x = 0; off_x < 8; ++off_x ) {
                     int block_index = (off_y * 8 + off_x);
 
-                    int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
-
                     int col = x + off_x;
                     int row = y + off_y;
 
                     if(row >= height) {
-                        src_index -= (width * (row - height + 1)) * src_num_components;
+                        //src_index -= (width * (row - height + 1)) * src_num_components;
+                        row = height - 1;
                     }
                     if(col >= width) {
-                        src_index -= (col - width + 1) * src_num_components;
+                        //src_index -= (col - width + 1) * src_num_components;
+                        col = width - 1;
                     }
+
+                    int src_index = ((row * width) + col) * src_num_components;
+                    
                     assert(src_index < width * height * src_num_components);
 
                     uint8_t r = src_data[src_index + 0];

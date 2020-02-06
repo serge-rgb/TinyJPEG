@@ -194,7 +194,9 @@ int tje_encode_with_func(tje_write_func* func,
 #include <assert.h>
 #include <inttypes.h>
 #include <math.h>   // floorf, ceilf
+#ifdef OFFTARGET
 #include <stdio.h>  // FILE, puts
+#endif
 #include <string.h> // memcpy
 
 
@@ -1209,8 +1211,12 @@ int tje_encode_to_file(const char* dest_path,
 
 static void tjei_stdlib_func(void* context, void* data, int size)
 {
+#ifdef OFFTARGET
     FILE* fd = (FILE*)context;
     fwrite(data, size, 1, fd);
+#else
+    // Do nothing
+#endif
 }
 
 // Define public interface.
@@ -1221,7 +1227,9 @@ int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int num_components,
                                   const unsigned char* src_data)
 {
+#ifdef OFFTARGET
     FILE* fd = fopen(dest_path, "wb");
+#endif
     if (!fd) {
         tje_log("Could not open file for writing.");
         return 0;

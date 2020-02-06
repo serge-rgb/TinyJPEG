@@ -1229,6 +1229,8 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 {
 #ifdef OFFTARGET
     FILE* fd = fopen(dest_path, "wb");
+#else
+    FILE* fd = nullptr;
 #endif
     if (!fd) {
         tje_log("Could not open file for writing.");

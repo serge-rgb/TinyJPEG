@@ -1135,6 +1135,8 @@ static int tjei_encode_main(TJEState* state,
 
 #ifdef USE_RGB_888
                     du.row(off_y*8 + off_x) = arma::trans (RGB2YUV * pixel.col(row*width + col) + offset);
+#elif defined(USE_DIRECT_YUV)
+                    du.row(off_y*8 + off_x) = {Y(col, row), UV(col/2, row/2)>>8, UV(col/2, row/2) & 0xff};
 #else
                     const arma::Col<uint8_t> vu((uint8_t*) &UV(col/2, row/2), 2, false, true);
 

@@ -1091,32 +1091,60 @@ static int tjei_encode_main(TJEState* state,
     uint32_t bitbuffer = 0;
     uint32_t location = 0;
 
-    const arma::Mat<uint8_t> pixel ((uint8_t*) src_data, 3, width*height, false, true);
+#ifdef USE_RGB_888
+    const arma::Mat<uint8_t> pixel ((uint8_t*) src_data, src_num_components, width*height, false, true);
+#else
+    // Convert NV12 format to RGB
+    arma::Mat<uint8_t> image_rgb(3,width*height);
+
+    // Map from camera_buffer
+    const arma::Mat<uint8_t> Y((uint8_t*) src_data, width, height, false, true);
+
+    typedef uint16_t uchar2;
+    //const size_t padding = cam_buf_size - width*height*3/2;
+    const size_t padding = 0;
+    const arma::Mat<uint16_t> UV((uchar2*) (src_data + padding + width*height), width/2, height/2, false, true);
+
+    const arma::fmat::fixed<3,2> VU2RGB = {
+        {1.370705f, 0.f},
+        {-0.698001f, -0.337633f},
+        {0.f, 1.732446f}
+    };
+#endif
+
     const arma::fmat::fixed<3,3> RGB2YUV = {
         {0.299f   ,0.587f    ,0.114f },
         {-0.1687f ,-0.3313f   ,0.5f   },
         {0.5f     ,-0.4187f   ,-0.0813f}
         };
+    const arma::fcolvec::fixed<3> offset = {-128.f, 0.f, 0.f};
 
     for ( int y = 0; y < height; y += 8 ) {
         for ( int x = 0; x < width; x += 8 ) {
             // Block loop: ====
             for ( int off_y = 0; off_y < 8; ++off_y ) {
                 for ( int off_x = 0; off_x < 8; ++off_x ) {
-                    //int block_index = (off_y * 8 + off_x);
-
                     int col = x + off_x;
                     int row = y + off_y;
 
+                    // Use boundary pixels if the coordinate is outside image boundary
                     if(row >= height)
                         row = height - 1;
                     if(col >= width)
                         col = width - 1;
 
-                    du.row(off_y*8 + off_x) = arma::trans (RGB2YUV * pixel.col(row*width + col));
+#ifdef USE_RGB_888
+                    du.row(off_y*8 + off_x) = arma::trans (RGB2YUV * pixel.col(row*width + col) + offset);
+#else
+                    const arma::Col<uint8_t> vu((uint8_t*) &UV(col/2, row/2), 2, false, true);
+
+                    du.row(off_y*8 + off_x) = arma::trans (
+                            RGB2YUV * (
+                                VU2RGB * (arma::conv_to<arma::fcolvec>::from(vu) - 128.f) + Y(col,row))
+                             + offset );
+#endif
                 }
             }
-            du.col(0) -= 128;
 
             tjei_encode_and_write_MCU(state, du_y,
 #if TJE_USE_FAST_DCT

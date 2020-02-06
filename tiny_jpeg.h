@@ -1078,9 +1078,6 @@ static int tjei_encode_main(TJEState* state,
     // Write compressed data.
 
     arma::fmat::fixed<64,3> du;
-    //float du_y[64];
-    //float du_b[64];
-    //float du_r[64];
     float* du_y = du.memptr();
     float* du_b = du_y + 64;
     float* du_r = du_b + 64;
@@ -1116,25 +1113,7 @@ static int tjei_encode_main(TJEState* state,
                     if(col >= width)
                         col = width - 1;
 
-                    //int src_index = ((row * width) + col) * src_num_components;
-                    //assert(src_index < width * height * src_num_components);
-
-                    //uint8_t r = src_data[src_index + 0];
-                    //uint8_t g = src_data[src_index + 1];
-                    //uint8_t b = src_data[src_index + 2];
-
-                    //du.tube(off_x, off_y) = RGB2YUV * arma::conv_to< arma::fcolvec >::from(
-                    //        pixel.col(row*width + col)
-                    //        );
-                    
                     du.row(off_y*8 + off_x) = arma::trans (RGB2YUV * pixel.col(row*width + col));
-                    //float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
-                    //float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
-                    //float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
-
-                    //du_y[block_index] = luma;
-                    //du_b[block_index] = cb;
-                    //du_r[block_index] = cr;
                 }
             }
             du.col(0) -= 128;

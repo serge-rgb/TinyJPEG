@@ -162,6 +162,10 @@ int tje_encode_with_func(tje_write_func* func,
 #endif // TJE_HEADER_GUARD
 
 
+#ifdef __cplusplus
+}  // extern C
+#endif
+
 
 // Implementation: In exactly one of the source files of your application,
 // define TJE_IMPLEMENTATION and include tiny_jpeg.h
@@ -940,6 +944,7 @@ static void tjei_huff_expand(TJEState* state)
     }
 }
 
+#include <armadillo>
 static int tjei_encode_main(TJEState* state,
                             const unsigned char* src_data,
                             const int width,
@@ -1072,9 +1077,13 @@ static int tjei_encode_main(TJEState* state,
     }
     // Write compressed data.
 
-    float du_y[64];
-    float du_b[64];
-    float du_r[64];
+    arma::fmat::fixed<64,3> du;
+    //float du_y[64];
+    //float du_b[64];
+    //float du_r[64];
+    float* du_y = du.memptr();
+    float* du_b = du_y + 64;
+    float* du_r = du_b + 64;
 
     // Set diff to 0.
     int pred_y = 0;
@@ -1085,43 +1094,50 @@ static int tjei_encode_main(TJEState* state,
     uint32_t bitbuffer = 0;
     uint32_t location = 0;
 
+    const arma::Mat<uint8_t> pixel ((uint8_t*) src_data, 3, width*height, false, true);
+    const arma::fmat::fixed<3,3> RGB2YUV = {
+        {0.299f   ,0.587f    ,0.114f },
+        {-0.1687f ,-0.3313f   ,0.5f   },
+        {0.5f     ,-0.4187f   ,-0.0813f}
+        };
 
     for ( int y = 0; y < height; y += 8 ) {
         for ( int x = 0; x < width; x += 8 ) {
             // Block loop: ====
             for ( int off_y = 0; off_y < 8; ++off_y ) {
                 for ( int off_x = 0; off_x < 8; ++off_x ) {
-                    int block_index = (off_y * 8 + off_x);
+                    //int block_index = (off_y * 8 + off_x);
 
                     int col = x + off_x;
                     int row = y + off_y;
 
-                    if(row >= height) {
-                        //src_index -= (width * (row - height + 1)) * src_num_components;
+                    if(row >= height)
                         row = height - 1;
-                    }
-                    if(col >= width) {
-                        //src_index -= (col - width + 1) * src_num_components;
+                    if(col >= width)
                         col = width - 1;
-                    }
 
-                    int src_index = ((row * width) + col) * src_num_components;
+                    //int src_index = ((row * width) + col) * src_num_components;
+                    //assert(src_index < width * height * src_num_components);
+
+                    //uint8_t r = src_data[src_index + 0];
+                    //uint8_t g = src_data[src_index + 1];
+                    //uint8_t b = src_data[src_index + 2];
+
+                    //du.tube(off_x, off_y) = RGB2YUV * arma::conv_to< arma::fcolvec >::from(
+                    //        pixel.col(row*width + col)
+                    //        );
                     
-                    assert(src_index < width * height * src_num_components);
+                    du.row(off_y*8 + off_x) = arma::trans (RGB2YUV * pixel.col(row*width + col));
+                    //float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
+                    //float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
+                    //float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
 
-                    uint8_t r = src_data[src_index + 0];
-                    uint8_t g = src_data[src_index + 1];
-                    uint8_t b = src_data[src_index + 2];
-
-                    float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
-                    float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
-                    float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
-
-                    du_y[block_index] = luma;
-                    du_b[block_index] = cb;
-                    du_r[block_index] = cr;
+                    //du_y[block_index] = luma;
+                    //du_b[block_index] = cb;
+                    //du_r[block_index] = cr;
                 }
             }
+            du.col(0) -= 128;
 
             tjei_encode_and_write_MCU(state, du_y,
 #if TJE_USE_FAST_DCT
@@ -1275,8 +1291,4 @@ int tje_encode_with_func(tje_write_func* func,
 #pragma GCC diagnostic pop
 #endif
 
-
-#ifdef __cplusplus
-}  // extern C
-#endif
 

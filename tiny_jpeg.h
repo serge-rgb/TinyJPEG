@@ -1103,7 +1103,7 @@ static int tjei_encode_main(TJEState* state,
 
 #ifdef USE_RGB_888
     const arma::Mat<uint8_t> pixel ((uint8_t*) src_data, src_num_components, width*height, false, true);
-#elif !defined(USE_DIRECT_YUV)
+#elif !defined(USE_DIRECT_YUV_DATA)
     // Convert NV12 format to RGB
     arma::Mat<uint8_t> image_rgb(3,width*height);
 
@@ -1149,12 +1149,14 @@ const size_t padding = 0;
 
 #ifdef USE_RGB_888
                     du.row(off_y*8 + off_x) = arma::trans (RGB2YUV * pixel.col(row*width + col) + offset);
-#elif defined(USE_DIRECT_YUV) && defined(TJE_USE_ARMADILLO)
-                    du.row(off_y*8 + off_x) = {Y(col, row), UV(col/2, row/2)>>8, UV(col/2, row/2) & 0xff};
-#elif defined(USE_DIRECT_YUV) && !defined(TJE_USE_ARMADILLO)
-                    du_y[off_y*8 + off_x] = Y[row*width + col];
-                    du_b[off_y*8 + off_x] = UV[row*width/4 + col/2]>>8;
-                    du_r[off_y*8 + off_x] = UV[row*width/4 + col/2] & 0xff;
+#elif defined(USE_DIRECT_YUV_DATA) && defined(TJE_USE_ARMADILLO)
+                    du(off_y*8 + off_x, 0) = static_cast<float>(Y(col, row)) - 128.f;
+                    du(off_y*8 + off_x, 1) = static_cast<float>(UV(col/2, row/2)>>8) - 128.f;
+                    du(off_y*8 + off_x, 2) = static_cast<float>(UV(col/2, row/2) & 0xff) - 128.f;
+#elif !defined(TJE_USE_ARMADILLO)
+                    du_y[off_y*8 + off_x] = float(Y[row*width + col]) - 128.f;
+                    du_b[off_y*8 + off_x] = float(UV[row*width/4 + col/2]>>8) - 128.f;
+                    du_r[off_y*8 + off_x] = float(UV[row*width/4 + col/2] & 0xff) - 128.f;
 #else
                     const arma::Col<uint8_t> vu((uint8_t*) &UV(col/2, row/2), 2, false, true);
 

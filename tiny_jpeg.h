@@ -162,6 +162,10 @@ int tje_encode_with_func(tje_write_func* func,
 #endif // TJE_HEADER_GUARD
 
 
+#ifdef __cplusplus
+}  // extern C
+#endif
+
 
 // Implementation: In exactly one of the source files of your application,
 // define TJE_IMPLEMENTATION and include tiny_jpeg.h
@@ -190,7 +194,9 @@ int tje_encode_with_func(tje_write_func* func,
 #include <assert.h>
 #include <inttypes.h>
 #include <math.h>   // floorf, ceilf
+#ifdef OFFTARGET
 #include <stdio.h>  // FILE, puts
+#endif
 #include <string.h> // memcpy
 
 
@@ -940,6 +946,7 @@ static void tjei_huff_expand(TJEState* state)
     }
 }
 
+#include <armadillo>
 static int tjei_encode_main(TJEState* state,
                             const unsigned char* src_data,
                             const int width,
@@ -1072,9 +1079,10 @@ static int tjei_encode_main(TJEState* state,
     }
     // Write compressed data.
 
-    float du_y[64];
-    float du_b[64];
-    float du_r[64];
+    arma::fmat::fixed<64,3> du;
+    float* du_y = du.memptr();
+    float* du_b = du_y + 64;
+    float* du_r = du_b + 64;
 
     // Set diff to 0.
     int pred_y = 0;
@@ -1085,38 +1093,60 @@ static int tjei_encode_main(TJEState* state,
     uint32_t bitbuffer = 0;
     uint32_t location = 0;
 
+#ifdef USE_RGB_888
+    const arma::Mat<uint8_t> pixel ((uint8_t*) src_data, src_num_components, width*height, false, true);
+#else
+    // Convert NV12 format to RGB
+    arma::Mat<uint8_t> image_rgb(3,width*height);
+
+    // Map from camera_buffer
+    const arma::Mat<uint8_t> Y((uint8_t*) src_data, width, height, false, true);
+
+    typedef uint16_t uchar2;
+    //const size_t padding = cam_buf_size - width*height*3/2;
+    const size_t padding = 0;
+    const arma::Mat<uint16_t> UV((uchar2*) (src_data + padding + width*height), width/2, height/2, false, true);
+
+    const arma::fmat::fixed<3,2> VU2RGB = {
+        {1.370705f, 0.f},
+        {-0.698001f, -0.337633f},
+        {0.f, 1.732446f}
+    };
+#endif
+
+    const arma::fmat::fixed<3,3> RGB2YUV = {
+        {0.299f   ,0.587f    ,0.114f },
+        {-0.1687f ,-0.3313f   ,0.5f   },
+        {0.5f     ,-0.4187f   ,-0.0813f}
+        };
+    const arma::fcolvec::fixed<3> offset = {-128.f, 0.f, 0.f};
+
     for ( int y = 0; y < height; y += 8 ) {
         for ( int x = 0; x < width; x += 8 ) {
             // Block loop: ====
-            for ( size_t off_y = 0; off_y < 8; ++off_y ) {
-                for ( size_t off_x = 0; off_x < 8; ++off_x ) {
-                    size_t block_index = (off_y * 8 + off_x);
+            for ( int off_y = 0; off_y < 8; ++off_y ) {
+                for ( int off_x = 0; off_x < 8; ++off_x ) {
+                    int col = x + off_x;
+                    int row = y + off_y;
 
-                    size_t src_index = (((y + off_y) * width) + (x + off_x));
+                    // Use boundary pixels if the coordinate is outside image boundary
+                    if(row >= height)
+                        row = height - 1;
+                    if(col >= width)
+                        col = width - 1;
 
-                    size_t cb_index = width*height + ((y + off_y)/2 * width/2) + (x + off_x)/2;
+#ifdef USE_RGB_888
+                    du.row(off_y*8 + off_x) = arma::trans (RGB2YUV * pixel.col(row*width + col) + offset);
+#elif defined(USE_DIRECT_YUV)
+                    du.row(off_y*8 + off_x) = {Y(col, row), UV(col/2, row/2)>>8, UV(col/2, row/2) & 0xff};
+#else
+                    const arma::Col<uint8_t> vu((uint8_t*) &UV(col/2, row/2), 2, false, true);
 
-                    size_t col = x + off_x;
-                    size_t row = y + off_y;
-
-                    if(row >= height) {
-                        src_index -= (width * (row - height + 1));
-                        cb_index -= (width/2 * (row/2 - height/2 + 1));
-                    }
-                    if(col >= width) {
-                        src_index -= (col - width + 1);
-                        cb_index -= (col/2 - width/2 + 1);
-                    }
-                    assert(src_index < width * height);
-                    assert(cb_index < width * height*3/2);
-
-                    const uint8_t luma = src_data[src_index];
-                    const uint8_t cb = src_data[cb_index];
-                    const uint8_t cr = src_data[cb_index+1];
-
-                    du_y[block_index] = luma;
-                    du_b[block_index] = cb;
-                    du_r[block_index] = cr;
+                    du.row(off_y*8 + off_x) = arma::trans (
+                            RGB2YUV * (
+                                VU2RGB * (arma::conv_to<arma::fcolvec>::from(vu) - 128.f) + Y(col,row))
+                             + offset );
+#endif
                 }
             }
 
@@ -1181,8 +1211,12 @@ int tje_encode_to_file(const char* dest_path,
 
 static void tjei_stdlib_func(void* context, void* data, int size)
 {
+#ifdef OFFTARGET
     FILE* fd = (FILE*)context;
     fwrite(data, size, 1, fd);
+#else
+    // Do nothing
+#endif
 }
 
 // Define public interface.
@@ -1193,7 +1227,9 @@ int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int num_components,
                                   const unsigned char* src_data)
 {
+#ifdef OFFTARGET
     FILE* fd = fopen(dest_path, "wb");
+#endif
     if (!fd) {
         tje_log("Could not open file for writing.");
         return 0;
@@ -1272,8 +1308,4 @@ int tje_encode_with_func(tje_write_func* func,
 #pragma GCC diagnostic pop
 #endif
 
-
-#ifdef __cplusplus
-}  // extern C
-#endif
 

@@ -1123,7 +1123,8 @@ static int tjei_encode_main(TJEState* state,
 #endif
 
 typedef uint16_t uchar2;
-const size_t padding = width * 32;
+//const size_t padding = width * 32;
+const size_t padding = 0;
 #ifdef TJE_USE_ARMADILLO
     // Map from camera_buffer
     const arma::Mat<uint8_t> Y((uint8_t*) src_data, width, height, false, true);
@@ -1153,8 +1154,8 @@ const size_t padding = width * 32;
                     du.row(off_y*8 + off_x) = {Y(col, row), UV(col/2, row/2)>>8, UV(col/2, row/2) & 0xff};
 #elif defined(USE_DIRECT_YUV) && !defined(USE_ARMADILLO)
                     du_y[off_y*8 + off_x] = Y[row*width + col];
-                    du_b[off_y*8 + off_x] = UV[col*width/4 + row/2]>>8;
-                    du_r[off_y*8 + off_x] = UV[col*width/4 + row/2] & 0xff;
+                    du_b[off_y*8 + off_x] = UV[row*width/4 + col/2]>>8;
+                    du_r[off_y*8 + off_x] = UV[row*width/4 + col/2] & 0xff;
 #else
                     const arma::Col<uint8_t> vu((uint8_t*) &UV(col/2, row/2), 2, false, true);
 

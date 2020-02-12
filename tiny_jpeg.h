@@ -1122,8 +1122,14 @@ static int tjei_encode_main(TJEState* state,
 #endif
 
 typedef uint16_t uchar2;
-//const size_t padding = width * 32;
+#ifndef OFFTARGET
+// Android YUV420SP has padding size of 32 rows
+const size_t padding = width * 32;
+#else
+// OpenCV.cvtColor assumes zero padding size
 const size_t padding = 0;
+#endif
+
 #ifdef TJE_USE_ARMADILLO
     // Map from camera_buffer
     const arma::Mat<uint8_t> Y((uint8_t*) src_data, width, height, false, true);
@@ -1156,9 +1162,9 @@ const size_t padding = 0;
 #elif defined(TJE_USE_DIRECT_YUV_DATA) && !defined(TJE_USE_ARMADILLO)
                     const size_t block_idx = off_y*8 + off_x;
                     const size_t UV_index = (row/2) * (width/2) + col/2;
-                    du_y[off_y*8 + off_x] = float(Y[row*width + col]) - 128.f;
-                    du_b[off_y*8 + off_x] = float(UV[UV_index]>>8) - 128.f;
-                    du_r[off_y*8 + off_x] = float(UV[UV_index] & 0xff) - 128.f;
+                    du_y[off_y*8 + off_x] = (float) (Y[row*width + col]) - 128.f;
+                    du_b[off_y*8 + off_x] = (float) (UV[UV_index]>>8) - 128.f;
+                    du_r[off_y*8 + off_x] = (float) (UV[UV_index] & 0xff) - 128.f;
 #else
                     const arma::Col<uint8_t> vu((uint8_t*) &UV(col/2, row/2), 2, false, true);
 
@@ -1250,18 +1256,21 @@ int tje_encode_to_file_at_quality(const char* dest_path,
 #ifdef OFFTARGET
     FILE* fd = fopen(dest_path, "wb");
 #else
-    FILE* fd = nullptr;
+    void* fd = NULL;
 #endif
     if (!fd) {
         tje_log("Could not open file for writing.");
         return 0;
     }
 
+#ifdef OFFTARGET
     int result = tje_encode_with_func(tjei_stdlib_func, fd,
                                       quality, width, height, num_components, src_data);
 
     result |= 0 == fclose(fd);
-
+#else
+    int result = 0;
+#endif
     return result;
 }
 

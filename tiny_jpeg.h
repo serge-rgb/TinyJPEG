@@ -66,7 +66,7 @@ int main()
         return EXIT_FAILURE;
     }
 
-    if ( !tje_encode_to_file("out.jpg", width, height, num_components, data) ) {
+    if ( !tje_encode_to_file("out.jpg", width, height, num_components, data, width * num_components) ) {
         fprintf(stderr, "Could not write JPEG\n");
         return EXIT_FAILURE;
     }
@@ -115,7 +115,8 @@ int tje_encode_to_file(const char* dest_path,
                        const int width,
                        const int height,
                        const int num_components,
-                       const unsigned char* src_data);
+                       const unsigned char* src_data,
+                       const int pitch);
 
 // - tje_encode_to_file_at_quality -
 //
@@ -139,7 +140,8 @@ int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int width,
                                   const int height,
                                   const int num_components,
-                                  const unsigned char* src_data);
+                                  const unsigned char* src_data,
+                                  const int pitch);
 
 // - tje_encode_with_func -
 //
@@ -157,7 +159,8 @@ int tje_encode_with_func(tje_write_func* func,
                          const int width,
                          const int height,
                          const int num_components,
-                         const unsigned char* src_data);
+                         const unsigned char* src_data,
+                         const int pitch);
 
 #endif // TJE_HEADER_GUARD
 
@@ -944,7 +947,8 @@ static int tjei_encode_main(TJEState* state,
                             const unsigned char* src_data,
                             const int width,
                             const int height,
-                            const int src_num_components)
+                            const int src_num_components,
+                            const int pitch)
 {
     if (src_num_components != 3 && src_num_components != 4) {
         return 0;
@@ -1093,18 +1097,18 @@ static int tjei_encode_main(TJEState* state,
                 for ( int off_x = 0; off_x < 8; ++off_x ) {
                     int block_index = (off_y * 8 + off_x);
 
-                    int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
+                    int src_index = (((y + off_y) * pitch) + ((x + off_x) * src_num_components));
 
                     int col = x + off_x;
                     int row = y + off_y;
 
                     if(row >= height) {
-                        src_index -= (width * (row - height + 1)) * src_num_components;
+                        src_index -= (pitch * (row - height + 1));
                     }
                     if(col >= width) {
                         src_index -= (col - width + 1) * src_num_components;
                     }
-                    assert(src_index < width * height * src_num_components);
+                    assert(src_index < height * pitch);
 
                     uint8_t r = src_data[src_index + 0];
                     uint8_t g = src_data[src_index + 1];
@@ -1173,9 +1177,10 @@ int tje_encode_to_file(const char* dest_path,
                        const int width,
                        const int height,
                        const int num_components,
-                       const unsigned char* src_data)
+                       const unsigned char* src_data,
+                       const int pitch)
 {
-    int res = tje_encode_to_file_at_quality(dest_path, 3, width, height, num_components, src_data);
+    int res = tje_encode_to_file_at_quality(dest_path, 3, width, height, num_components, src_data, pitch);
     return res;
 }
 
@@ -1191,7 +1196,8 @@ int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int width,
                                   const int height,
                                   const int num_components,
-                                  const unsigned char* src_data)
+                                  const unsigned char* src_data,
+                                  const int pitch)
 {
     FILE* fd = fopen(dest_path, "wb");
     if (!fd) {
@@ -1200,7 +1206,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
     }
 
     int result = tje_encode_with_func(tjei_stdlib_func, fd,
-                                      quality, width, height, num_components, src_data);
+                                      quality, width, height, num_components, src_data, pitch);
 
     result |= 0 == fclose(fd);
 
@@ -1213,7 +1219,8 @@ int tje_encode_with_func(tje_write_func* func,
                          const int width,
                          const int height,
                          const int num_components,
-                         const unsigned char* src_data)
+                         const unsigned char* src_data,
+                         const int pitch)
 {
     if (quality < 1 || quality > 3) {
         tje_log("[ERROR] -- Valid 'quality' values are 1 (lowest), 2, or 3 (highest)\n");
@@ -1260,7 +1267,7 @@ int tje_encode_with_func(tje_write_func* func,
 
     tjei_huff_expand(&state);
 
-    int result = tjei_encode_main(&state, src_data, width, height, num_components);
+    int result = tjei_encode_main(&state, src_data, width, height, num_components, pitch);
 
     return result;
 }

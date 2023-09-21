@@ -456,7 +456,7 @@ typedef struct
 typedef struct
 {
     uint16_t         SOF;
-    uint16_t         len;                   // 8 + 3 * frame.color_format
+    uint16_t         len;                   // 8 + 3 * frame.num_components
     uint8_t          precision;             // Sample precision (bits per sample).
     uint16_t         height;
     uint16_t         width;

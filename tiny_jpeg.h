@@ -59,14 +59,14 @@
 
 int main()
 {
-    int width, height, num_components;
-    unsigned char* data = stbi_load("in.bmp", &width, &height, &num_components, 0);
+    int width, height, color_format;
+    unsigned char* data = stbi_load("in.bmp", &width, &height, &color_format, 0);
     if ( !data ) {
         puts("Could not find file");
         return EXIT_FAILURE;
     }
 
-    if ( !tje_encode_to_file("out.jpg", width, height, num_components, data) ) {
+    if ( !tje_encode_to_file("out.jpg", width, height, color_format, data) ) {
         fprintf(stderr, "Could not write JPEG\n");
         return EXIT_FAILURE;
     }
@@ -97,6 +97,18 @@ extern "C"
 #ifndef TJE_HEADER_GUARD
 #define TJE_HEADER_GUARD
 
+// - TJEColorFormat -
+//
+// Usage:
+//  Color format on bitmap data
+
+typedef enum
+{
+    TJE_RGBA = 4,
+    TJE_RGB888 = 3,
+    TJE_RGB565 = 2,
+} TJEColorFormat;
+
 // - tje_encode_to_file -
 //
 // Usage:
@@ -105,7 +117,7 @@ extern "C"
 //  PARAMETERS
 //      dest_path:          filename to which we will write. e.g. "out.jpg"
 //      width, height:      image size in pixels
-//      num_components:     3 is RGB. 4 is RGBA. Those are the only supported values
+//      color_format:       2 is RGB565, 3 is RGB888. 4 is RGBA. Those are the only supported values
 //      src_data:           pointer to the pixel data.
 //
 //  RETURN:
@@ -114,7 +126,7 @@ extern "C"
 int tje_encode_to_file(const char* dest_path,
                        const int width,
                        const int height,
-                       const int num_components,
+                       TJEColorFormat color_format,
                        const unsigned char* src_data);
 
 // - tje_encode_to_file_at_quality -
@@ -128,7 +140,7 @@ int tje_encode_to_file(const char* dest_path,
 //                          2: Very good quality. About 1/2 the size of 3.
 //                          1: Noticeable. About 1/6 the size of 3, or 1/3 the size of 2.
 //      width, height:      image size in pixels
-//      num_components:     3 is RGB. 4 is RGBA. Those are the only supported values
+//      color_format:       2 is RGB565, 3 is RGB888. 4 is RGBA. Those are the only supported values
 //      src_data:           pointer to the pixel data.
 //
 //  RETURN:
@@ -138,7 +150,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int quality,
                                   const int width,
                                   const int height,
-                                  const int num_components,
+                                  TJEColorFormat color_format,
                                   const unsigned char* src_data);
 
 // - tje_encode_with_func -
@@ -156,7 +168,7 @@ int tje_encode_with_func(tje_write_func* func,
                          const int quality,
                          const int width,
                          const int height,
-                         const int num_components,
+                         TJEColorFormat color_format,
                          const unsigned char* src_data);
 
 #endif // TJE_HEADER_GUARD
@@ -949,9 +961,9 @@ static int tjei_encode_main(TJEState* state,
                             const unsigned char* src_data,
                             const int width,
                             const int height,
-                            const int src_num_components)
+                            TJEColorFormat color_format)
 {
-    if (src_num_components != 3 && src_num_components != 4) {
+    if (color_format < 2 || color_format > 4) {
         return 0;
     }
 
@@ -1098,23 +1110,42 @@ static int tjei_encode_main(TJEState* state,
                 for ( int off_x = 0; off_x < 8; ++off_x ) {
                     int block_index = (off_y * 8 + off_x);
 
-                    int src_index = (((y + off_y) * width) + (x + off_x)) * src_num_components;
+                    int src_index = (((y + off_y) * width) + (x + off_x)) * color_format;
 
                     int col = x + off_x;
                     int row = y + off_y;
 
                     if(row >= height) {
-                        src_index -= (width * (row - height + 1)) * src_num_components;
+                        src_index -= (width * (row - height + 1)) * color_format;
                     }
                     if(col >= width) {
-                        src_index -= (col - width + 1) * src_num_components;
+                        src_index -= (col - width + 1) * color_format;
                     }
-                    assert(src_index < width * height * src_num_components);
+                    assert(src_index < width * height * color_format);
 
-                    uint8_t r = src_data[src_index + 0];
-                    uint8_t g = src_data[src_index + 1];
-                    uint8_t b = src_data[src_index + 2];
 
+                    uint8_t r,g,b;
+                    uint16_t rgb;
+                    switch (color_format)
+                    {
+                    case TJE_RGBA:
+                        r = src_data[src_index + 0];
+                        g = src_data[src_index + 1];
+                        b = src_data[src_index + 2];
+                        break;
+                    case TJE_RGB888:
+                        r = src_data[src_index + 0];
+                        g = src_data[src_index + 1];
+                        b = src_data[src_index + 2];
+                        break;
+                    case TJE_RGB565:
+                        rgb = (src_data[src_index + 1] << CHAR_BIT | src_data[src_index + 0]);
+                        r = (rgb & 0b0000000000011111) << 3;
+                        g = (rgb & 0b0000011111100000) >> 3;
+                        b = (rgb & 0b1111100000000000) >> 8;
+                        break;
+                    }
+                    
                     float luma = 0.299f   * r + 0.587f    * g + 0.114f    * b - 128;
                     float cb   = -0.1687f * r - 0.3313f   * g + 0.5f      * b;
                     float cr   = 0.5f     * r - 0.4187f   * g - 0.0813f   * b;
@@ -1177,10 +1208,10 @@ static int tjei_encode_main(TJEState* state,
 int tje_encode_to_file(const char* dest_path,
                        const int width,
                        const int height,
-                       const int num_components,
+                       TJEColorFormat color_format,
                        const unsigned char* src_data)
 {
-    int res = tje_encode_to_file_at_quality(dest_path, 3, width, height, num_components, src_data);
+    int res = tje_encode_to_file_at_quality(dest_path, 3, width, height, color_format, src_data);
     return res;
 }
 
@@ -1195,7 +1226,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
                                   const int quality,
                                   const int width,
                                   const int height,
-                                  const int num_components,
+                                  TJEColorFormat color_format,
                                   const unsigned char* src_data)
 {
     FILE* fd = fopen(dest_path, "wb");
@@ -1205,7 +1236,7 @@ int tje_encode_to_file_at_quality(const char* dest_path,
     }
 
     int result = tje_encode_with_func(tjei_stdlib_func, fd,
-                                      quality, width, height, num_components, src_data);
+                                      quality, width, height, color_format, src_data);
 
     result |= 0 == fclose(fd);
 
@@ -1217,7 +1248,7 @@ int tje_encode_with_func(tje_write_func* func,
                          const int quality,
                          const int width,
                          const int height,
-                         const int num_components,
+                         TJEColorFormat color_format,
                          const unsigned char* src_data)
 {
     if (quality < 1 || quality > 3) {
@@ -1265,7 +1296,7 @@ int tje_encode_with_func(tje_write_func* func,
 
     tjei_huff_expand(&state);
 
-    int result = tjei_encode_main(&state, src_data, width, height, num_components);
+    int result = tjei_encode_main(&state, src_data, width, height, color_format);
 
     return result;
 }

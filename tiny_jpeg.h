@@ -460,7 +460,7 @@ typedef struct
     uint8_t          precision;             // Sample precision (bits per sample).
     uint16_t         height;
     uint16_t         width;
-    TJEColorFormat   color_format;
+    uint8_t          num_components;        // For this implementation, will be equal to 3.
     TJEComponentSpec component_spec[3];
 } TJEFrameHeader;
 
@@ -474,7 +474,7 @@ typedef struct
 {
     uint16_t              SOS;
     uint16_t              len;
-    TJEColorFormat        color_format;
+    uint8_t               num_components;  // 3.
     TJEFrameComponentSpec component_spec[3];
     uint8_t               first;  // 0
     uint8_t               last;  // 63
@@ -1038,7 +1038,7 @@ static int tjei_encode_main(TJEState* state,
         assert(height <= 0xffff);
         header.width = tjei_be_word((uint16_t)width);
         header.height = tjei_be_word((uint16_t)height);
-        header.color_format = 3;
+        header.num_components = 3;
         uint8_t tables[3] = {
             0,  // Luma component gets luma table (see tjei_write_DQT call above.)
             1,  // Chroma component gets chroma table
@@ -1066,7 +1066,7 @@ static int tjei_encode_main(TJEState* state,
         TJEScanHeader header;
         header.SOS = tjei_be_word(0xffda);
         header.len = tjei_be_word((uint16_t)(6 + (sizeof(TJEFrameComponentSpec) * 3)));
-        header.color_format = 3;
+        header.num_components = 3;
 
         uint8_t tables[3] = {
             0x00,

@@ -1139,7 +1139,7 @@ static int tjei_encode_main(TJEState* state,
                         b = src_data[src_index + 2];
                         break;
                     case TJE_RGB565:
-                        rgb = (src_data[src_index + 1] << __CHAR_BIT__ | src_data[src_index + 0]);
+                        rgb = (src_data[src_index + 1] << CHAR_BIT | src_data[src_index + 0]);
                         r = (rgb & 0b0000000000011111) << 3;
                         g = (rgb & 0b0000011111100000) >> 3;
                         b = (rgb & 0b1111100000000000) >> 8;
